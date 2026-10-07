@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>{{ t('login.title') }} · {{ app_name }}</title>
+  <link rel="stylesheet" href="{{ static('vendor/tabler/tabler.min.css') }}">
+  <link rel="stylesheet" href="{{ static('vendor/tabler-icons/tabler-icons.min.css') }}">
+</head>
+<body class="d-flex flex-column">
+<div class="page page-center">
+  <div class="container container-tight py-4">
+    <div class="text-center mb-4">
+      <span class="navbar-brand navbar-brand-autodark fs-2"><i class="ti ti-report-analytics me-1"></i>{{ app_name }}</span>
+      <div class="text-secondary">{{ t('app.tagline') }}</div>
+    </div>
+    <div class="card card-md">
+      <div class="card-body">
+        <h2 class="h2 text-center mb-4">{{ t('login.heading') }}</h2>
+        {% if notice %}<div class="alert alert-success" role="alert">{{ notice }}</div>{% endif %}
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" action="/login" autocomplete="off" novalidate>
+          <input type="hidden" name="next" value="{{ next }}">
+          <div class="mb-3">
+            <label class="form-label" for="username">{{ t('login.username') }}</label>
+            <input type="text" class="form-control" id="username" name="username" value="{{ username }}"
+                   autocomplete="username" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">{{ t('login.password') }}</label>
+            <input type="password" class="form-control" id="password" name="password"
+                   autocomplete="current-password" required>
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100">{{ t('login.submit') }}</button>
+          </div>
+        </form>
+      </div>
+      {% if sso_enabled %}
+      <div class="hr-text">{{ t('login.or') }}</div>
+      <div class="card-body">
+        <a href="/auth/sso/login?next={{ next | urlencode }}" class="btn w-100"><i class="ti ti-key me-2"></i>{{ t('login.sso') }}</a>
+      </div>
+      {% endif %}
+    </div>
+    <div class="text-center text-secondary mt-3">
+      {% for loc in locales %}
+      <a href="/locale/{{ loc }}?next={{ ('/login?next=' ~ next) | urlencode }}" class="{% if loc == locale %}fw-bold{% endif %} mx-1">{{ t('lang.' ~ loc) }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+<script src="{{ static('vendor/tabler/tabler.min.js') }}"></script>
+</body>
+</html>

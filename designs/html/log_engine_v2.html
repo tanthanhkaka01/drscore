@@ -1,0 +1,128 @@
+<!doctype html>
+{#
+  Design of LOG_ENGINE_V2: engine v2 runs per company and run kind.
+
+  It shows what the query returns and nothing else: the table lists every column of the result
+  under its own name with its own values, and the two charts plot the same numbers. A column added
+  to the query appears in the table without a change here; the charts name the columns they plot
+  (Runs15Min ... Seconds7Days) and CompanyId, CompanyCode, RunKind for the labels.
+
+  Available: report, params, columns, rows (already filtered for the viewer), row_count,
+  snapshot, user, now, csp_nonce. A <script> runs only with nonce="{{ csp_nonce }}".
+#}
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>{{ report.name }}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ static('vendor/tabler/tabler.min.css') }}">
+  <style>
+    body { background: transparent; }
+    .chart { height: 360px; }
+    /* Print / Save as PDF from the portal: A4 landscape, cards kept whole. */
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print {
+      .chart { height: 250px; }
+      .card { break-inside: avoid; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-baseline flex-wrap gap-2 mb-3">
+    <h2 class="mb-0">{{ report.name }}</h2>
+    <div class="ms-auto text-secondary small">
+      {% for name, value in params.items() %}{{ name }} = {{ value }} · {% endfor %}
+      Dữ liệu lúc {{ snapshot.created_at | fmt_datetime }} · {{ row_count }} dòng · {{ user.display_name }}
+    </div>
+  </div>
+
+  <div class="row row-cards mb-3">
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Số lần run</h3>
+          <div class="card-actions text-secondary small">trục dọc thang log</div>
+        </div>
+        <div class="card-body"><div id="chart-runs" class="chart"></div></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Tổng số giây chạy</h3>
+          <div class="card-actions text-secondary small">trục dọc thang log</div>
+        </div>
+        <div class="card-body"><div id="chart-seconds" class="chart"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-vcenter table-striped card-table">
+        <thead>
+          <tr>
+            {% for c in columns %}
+            <th class="{{ 'text-end' if c.type in ('int', 'decimal', 'float') else '' }}">{{ c.label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            {% for c in columns %}
+            <td class="{{ 'text-end' if c.type in ('int', 'decimal', 'float') else '' }}">{{ '' if r[c.name] is none else r[c.name] }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ columns | length }}" class="text-center text-secondary">Không có dữ liệu.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="{{ static('vendor/echarts/echarts.min.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var rows = {{ rows | tojson }};
+    // One bar group per row of the result, named by the row's own CompanyId, CompanyCode and RunKind.
+    var labels = rows.map(function (r) {
+      return r.CompanyId + (r.CompanyCode ? " " + r.CompanyCode : "") + " · " + r.RunKind;
+    });
+    var charts = [];
+
+    function draw(id, fields) {
+      var chart = echarts.init(document.getElementById(id));
+      chart.setOption({
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+        legend: { top: 0, data: fields },
+        // Room for a legend that wraps onto two lines when the card is narrow.
+        grid: { left: 80, right: 20, top: 64, bottom: 110 },
+        xAxis: { type: "category", data: labels, axisLabel: { rotate: 35, interval: 0 } },
+        // A log scale: one group counts a million runs and another one run, and both must be seen.
+        // A zero has no place on it and is drawn as no bar; the table below shows it.
+        yAxis: { type: "log", min: 1 },
+        series: fields.map(function (field) {
+          return { name: field, type: "bar", data: rows.map(function (r) { return r[field] > 0 ? r[field] : null; }) };
+        })
+      });
+      charts.push(chart);
+    }
+
+    draw("chart-runs", ["Runs15Min", "Runs1Hour", "Runs24Hours", "Runs7Days"]);
+    draw("chart-seconds", ["Seconds15Min", "Seconds1Hour", "Seconds24Hours", "Seconds7Days"]);
+
+    function resize() { charts.forEach(function (c) { c.resize(); }); }
+    window.addEventListener("resize", resize);
+    // Print / Save as PDF: redraw the charts at their print size, then back.
+    window.addEventListener("beforeprint", resize);
+    window.addEventListener("afterprint", resize);
+    if (window.matchMedia) window.matchMedia("print").addEventListener("change", resize);
+  })();
+</script>
+</body>
+</html>

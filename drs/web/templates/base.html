@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <meta name="csrf-token" content="{{ auth.csrf_token if auth else '' }}">
+  <title>{% block title %}{% endblock %} · {{ app_name }}</title>
+  <link rel="stylesheet" href="{{ static('vendor/tabler/tabler.min.css') }}">
+  <link rel="stylesheet" href="{{ static('vendor/tabler-icons/tabler-icons.min.css') }}">
+  {% block head %}{% endblock %}
+  <link rel="stylesheet" href="{{ static('css/drs.css') }}">
+</head>
+<body>
+<div class="page">
+  <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu"
+              aria-controls="sidebar-menu" aria-expanded="false" aria-label="{{ t('nav.toggle') }}">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="navbar-brand navbar-brand-autodark">
+        <a href="/" class="text-reset text-decoration-none">
+          <i class="ti ti-report-analytics me-1"></i>{{ app_name }}
+        </a>
+      </div>
+      <div class="collapse navbar-collapse" id="sidebar-menu">
+        <ul class="navbar-nav pt-lg-3">
+          <li class="nav-item {% if path == '/' %}active{% endif %}">
+            <a class="nav-link" href="/">
+              <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-home"></i></span>
+              <span class="nav-link-title">{{ t('nav.home') }}</span>
+            </a>
+          </li>
+          {% for g in menu %}
+          {% set open = active_group is defined and active_group == g.code %}
+          <li class="nav-item dropdown {% if open %}active{% endif %}">
+            <a class="nav-link dropdown-toggle {% if open %}show{% endif %}" href="#menu-{{ g.code }}"
+               data-bs-toggle="dropdown" data-bs-auto-close="false" role="button"
+               aria-expanded="{{ 'true' if open else 'false' }}">
+              <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-{{ g.icon or 'folder' }}"></i></span>
+              <span class="nav-link-title">{{ g.name }}</span>
+            </a>
+            <div class="dropdown-menu {% if open %}show{% endif %}">
+              {% for r in g.reports %}
+              <a class="dropdown-item {% if active_report is defined and active_report == r.code %}active{% endif %}"
+                 href="/reports/{{ r.code }}">{{ r.name }}</a>
+              {% endfor %}
+            </div>
+          </li>
+          {% endfor %}
+          {% if auth and auth.is_admin %}
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/">
+              <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-settings"></i></span>
+              <span class="nav-link-title">{{ t('nav.admin') }}</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+  <div class="page-wrapper">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <div class="navbar-nav flex-row order-md-last ms-auto">
+          <div class="nav-item dropdown me-2">
+            <a href="#" class="nav-link px-0" data-bs-toggle="dropdown" aria-label="{{ t('nav.language') }}">
+              <i class="ti ti-language me-1"></i>{{ locale | upper }}
+            </a>
+            <div class="dropdown-menu dropdown-menu-end">
+              {% for loc in locales %}
+              <a class="dropdown-item {% if loc == locale %}active{% endif %}" href="/locale/{{ loc }}?next={{ path | urlencode }}">{{ t('lang.' ~ loc) }}</a>
+              {% endfor %}
+            </div>
+          </div>
+          {% if auth %}
+          <div class="nav-item dropdown">
+            <a href="#" class="nav-link d-flex lh-1 p-0 px-2" data-bs-toggle="dropdown">
+              <span class="avatar avatar-sm"><i class="ti ti-user"></i></span>
+              <div class="d-none d-xl-block ps-2">
+                <div>{{ auth.display_name }}</div>
+                <div class="mt-1 small text-secondary">{{ auth.username }}{% if auth.is_admin %} · {{ t('nav.admin_badge') }}{% endif %}</div>
+              </div>
+            </a>
+            <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+              <a href="/account" class="dropdown-item"><i class="ti ti-user-cog me-2"></i>{{ t('nav.account') }}</a>
+              <div class="dropdown-divider"></div>
+              <form method="post" action="/logout" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+                <button type="submit" class="dropdown-item"><i class="ti ti-logout me-2"></i>{{ t('nav.logout') }}</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </header>
+    <div class="page-header d-print-none">
+      <div class="container-xl">
+        <div class="row g-2 align-items-center">
+          <div class="col">
+            {% block header %}{% endblock %}
+          </div>
+          <div class="col-auto ms-auto d-print-none">
+            {% block header_actions %}{% endblock %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="container-xl">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</div>
+<script src="{{ static('vendor/tabler/tabler.min.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

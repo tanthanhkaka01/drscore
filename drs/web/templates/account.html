@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ t('account.title') }}{% endblock %}
+{% block header %}<h2 class="page-title">{{ t('account.title') }}</h2>{% endblock %}
+{% block content %}
+<div class="row row-cards">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">{{ t('account.profile') }}</h3></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-5">{{ t('account.username') }}</dt><dd class="col-7">{{ user.username }}</dd>
+          <dt class="col-5">{{ t('account.display_name') }}</dt><dd class="col-7">{{ user.display_name }}</dd>
+          <dt class="col-5">{{ t('account.language') }}</dt>
+          <dd class="col-7">
+            {% for loc in locales %}
+            <a href="/locale/{{ loc }}?next=/account" class="btn btn-sm {% if loc == locale %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ t('lang.' ~ loc) }}</a>
+            {% endfor %}
+          </dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">{{ t('account.password_section') }}</h3></div>
+      <div class="card-body">
+        {% if not user.password_hash %}
+        <div class="alert alert-info mb-0">{{ t('account.sso_only') }}</div>
+        {% else %}
+        {% if user.must_change_password %}<div class="alert alert-warning" role="alert">{{ t('account.must_change') }}</div>{% endif %}
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" action="/account/password" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <div class="mb-3">
+            <label class="form-label" for="current_password">{{ t('account.current_password') }}</label>
+            <input type="password" class="form-control" id="current_password" name="current_password" required
+                   autocomplete="current-password">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="new_password">{{ t('account.new_password') }}</label>
+            <input type="password" class="form-control" id="new_password" name="new_password" required
+                   minlength="{{ min_length }}" autocomplete="new-password">
+            <small class="form-hint">{{ t('account.min_length', n=min_length) }}</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="repeat_password">{{ t('account.repeat_password') }}</label>
+            <input type="password" class="form-control" id="repeat_password" name="repeat_password" required
+                   minlength="{{ min_length }}" autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-primary">{{ t('account.save') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

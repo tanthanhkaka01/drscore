@@ -1,0 +1,24 @@
+# DRS database configuration. Copy to config/database.toml and edit.
+# This file alone decides which engine holds the DRS database.
+
+# Which engine holds the DRS database: "sqlite" or "postgresql".
+# The environment variable DRS_DB_ACTIVE, when set, overrides this value.
+active = "sqlite"
+
+[sqlite]
+# Relative paths are relative to the project root.
+path = "runtime/drs.sqlite3"
+
+[postgresql]
+host = "127.0.0.1"
+port = 5432
+database = "drs"
+user = "drs_app"
+# Name of the environment variable that holds the password. Never the password itself.
+password_env = "DRS_DB_PASSWORD"
+# Schema of the DRS tables, and schema of the tables Superset reads.
+schema = "drs"
+bi_schema = "drs_bi"
+sslmode = "prefer"
+pool_size = 5
+max_overflow = 5

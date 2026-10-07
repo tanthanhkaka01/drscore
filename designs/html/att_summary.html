@@ -1,0 +1,109 @@
+<!doctype html>
+{#
+  Design of ATT_SUMMARY (spec section 22). Rendered by DRS in a sandbox with auto-escaping.
+  Available: report, params, columns, rows (already filtered for the viewer), row_count,
+  snapshot, user, now, csp_nonce; filters fmt_number, fmt_date, fmt_datetime, tojson;
+  static('vendor/...') for the portal's libraries. A <script> runs only with nonce="{{ csp_nonce }}".
+#}
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>{{ report.name }}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ static('vendor/tabler/tabler.min.css') }}">
+  <style>
+    body { background: transparent; }
+    #chart { height: 320px; }
+    /* Print / Save as PDF from the portal: A4 landscape, cards kept whole. */
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print {
+      #chart { height: 260px; }
+      .card { break-inside: avoid; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-baseline mb-3">
+    <h2 class="mb-0">{{ report.name }}</h2>
+    <div class="ms-auto text-secondary small">
+      Từ {{ params.from_date | fmt_date }} đến {{ params.to_date | fmt_date }}
+      · Dữ liệu lúc {{ snapshot.created_at | fmt_datetime }} · {{ user.display_name }}
+    </div>
+  </div>
+
+  {% set total_hours = rows | sum(attribute='work_hours') %}
+  {% set total_ot = rows | sum(attribute='ot_hours') %}
+  {% set total_late = rows | sum(attribute='late_minutes') %}
+  <div class="row row-cards mb-3">
+    <div class="col-sm-4"><div class="card card-sm"><div class="card-body">
+      <div class="text-secondary">Giờ công</div><div class="h2 mb-0">{{ total_hours | fmt_number(1) }}</div>
+    </div></div></div>
+    <div class="col-sm-4"><div class="card card-sm"><div class="card-body">
+      <div class="text-secondary">Giờ tăng ca</div><div class="h2 mb-0">{{ total_ot | fmt_number(1) }}</div>
+    </div></div></div>
+    <div class="col-sm-4"><div class="card card-sm"><div class="card-body">
+      <div class="text-secondary">Phút đi trễ</div><div class="h2 mb-0">{{ total_late | fmt_number }}</div>
+    </div></div></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h3 class="card-title">Giờ công theo phòng ban</h3></div>
+    <div class="card-body"><div id="chart"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Công ty</th><th>Phòng ban</th>
+            <th class="text-end">Nhân viên</th><th class="text-end">Giờ công</th>
+            <th class="text-end">Tăng ca</th><th class="text-end">Phút trễ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.company_code }}</td><td>{{ r.department }}</td>
+            <td class="text-end">{{ r.employees | fmt_number }}</td>
+            <td class="text-end">{{ r.work_hours | fmt_number(1) }}</td>
+            <td class="text-end">{{ r.ot_hours | fmt_number(1) }}</td>
+            <td class="text-end">{{ r.late_minutes | fmt_number }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-secondary">Không có dữ liệu.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="{{ static('vendor/echarts/echarts.min.js') }}"></script>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var rows = {{ rows | tojson }};
+    var labels = rows.map(function (r) { return r.company_code + " · " + r.department; });
+    var chart = echarts.init(document.getElementById("chart"));
+    chart.setOption({
+      tooltip: { trigger: "axis" },
+      legend: { top: 0, data: ["Giờ công", "Tăng ca"] },
+      grid: { left: 60, right: 20, top: 40, bottom: 80 },
+      xAxis: { type: "category", data: labels, axisLabel: { rotate: 30 } },
+      yAxis: { type: "value" },
+      series: [
+        { name: "Giờ công", type: "bar", data: rows.map(function (r) { return r.work_hours; }) },
+        { name: "Tăng ca", type: "bar", data: rows.map(function (r) { return r.ot_hours; }) }
+      ]
+    });
+    window.addEventListener("resize", function () { chart.resize(); });
+    // Print / Save as PDF: redraw the chart at its print size, then back.
+    window.addEventListener("beforeprint", function () { chart.resize(); });
+    window.addEventListener("afterprint", function () { chart.resize(); });
+    if (window.matchMedia) window.matchMedia("print").addEventListener("change", function () { chart.resize(); });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set r = definition.report %}
+{% block title %}{{ r.name }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ static('vendor/tabulator/tabulator_bootstrap5.min.css') }}">{% endblock %}
+{% block header %}
+<div class="page-pretitle">{{ r.group_name }} · {{ r.code }}</div>
+<h2 class="page-title">{{ r.name }}</h2>
+{% if r.description %}<div class="text-secondary mt-1">{{ r.description }}</div>{% endif %}
+{% endblock %}
+{% block content %}
+<script type="application/json" id="page-data">{{ page_data | tojson }}</script>
+
+{% if definition.params %}
+<form class="card mb-3" id="param-form" novalidate>
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      {% for p in definition.params %}
+      <div class="col-sm-6 col-lg-3">
+        {% set id = 'p-' ~ p.name %}
+        {% if p.data_type == 'bool' and p.input_kind == 'input' %}
+        <label class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="{{ id }}" name="{{ p.name }}" data-kind="bool"
+                 {% if p.default == 'true' %}checked{% endif %}>
+          <span class="form-check-label">{{ p.label }}</span>
+        </label>
+        {% else %}
+        <label class="form-label {% if p.required %}required{% endif %}" for="{{ id }}">{{ p.label }}</label>
+        {% if p.input_kind == 'select' %}
+        <select class="form-select" id="{{ id }}" name="{{ p.name }}" data-kind="select">
+          {% if not p.required %}<option value="">{{ t('report.any') }}</option>{% endif %}
+          {% for o in p.options %}
+          <option value="{{ o.value }}" {% if o.value == p.default %}selected{% endif %}>{{ o.label }}</option>
+          {% endfor %}
+        </select>
+        {% elif p.input_kind == 'multiselect' %}
+        <select class="form-select" id="{{ id }}" name="{{ p.name }}" data-kind="multi" multiple size="4">
+          {% for o in p.options %}
+          <option value="{{ o.value }}" {% if p.default and o.value in p.default %}selected{% endif %}>{{ o.label }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        {% set kinds = {'int': 'number', 'decimal': 'text', 'date': 'date', 'datetime': 'datetime-local'} %}
+        <input class="form-control" id="{{ id }}" name="{{ p.name }}" data-kind="input"
+               type="{{ kinds.get(p.data_type, 'text') }}" value="{{ p.default or '' }}"
+               {% if p.data_type == 'int' %}step="1"{% endif %}
+               {% if p.data_type == 'decimal' %}inputmode="decimal"{% endif %}
+               {% if p.min_value and p.data_type in ('int', 'date', 'datetime') %}min="{{ p.min_value }}"{% endif %}
+               {% if p.max_value and p.data_type in ('int', 'date', 'datetime') %}max="{{ p.max_value }}"{% endif %}
+               {% if p.max_length %}maxlength="{{ p.max_length }}"{% endif %}>
+        {% endif %}
+        {% endif %}
+        <div class="invalid-feedback" data-error-for="{{ p.name }}"></div>
+      </div>
+      {% endfor %}
+      <div class="col-sm-6 col-lg-3">
+        <button type="submit" class="btn btn-primary w-100" data-busy-disable>
+          <i class="ti ti-player-play me-2"></i>{{ t('report.run') }}
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+{% set icons = {'grid': 'table', 'html': 'layout-dashboard', 'bi': 'chart-pie'} %}
+{% set data_views = definition.views | selectattr('ok') | map(attribute='key') | reject('equalto', 'bi') | list %}
+<div class="card">
+  <div class="card-header">
+    <ul class="nav nav-tabs card-header-tabs" id="view-tabs" role="tablist">
+      {% for v in definition.views %}
+      <li class="nav-item" role="presentation">
+        <a href="#" class="nav-link {% if v.key == definition.default_view %}active{% endif %}" data-view="{{ v.key }}" role="tab">
+          <i class="ti ti-{{ icons[v.key] }} me-2"></i>{{ t('view.' ~ v.key) }}
+          {% if not v.ok %}<span class="badge bg-red-lt ms-2">!</span>{% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="card-header flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      {% if not definition.params and data_views %}
+      <button type="button" class="btn btn-primary" id="run-button" data-busy-disable>
+        <i class="ti ti-player-play me-2"></i>{{ t('report.run') }}
+      </button>
+      {% endif %}
+      {% if definition.can_refresh and data_views %}
+      <button type="button" class="btn btn-outline-secondary" id="refresh-button" data-busy-disable disabled>
+        <i class="ti ti-refresh me-2"></i>{{ t('report.refresh') }}
+      </button>
+      {% endif %}
+      {% if 'html' in data_views %}
+      <button type="button" class="btn btn-outline-secondary d-none" id="html-print" data-for-view="html" disabled>
+        <i class="ti ti-printer me-2"></i>{{ t('report.print_pdf') }}</button>
+      <a class="btn btn-outline-secondary disabled d-none" id="html-open" data-for-view="html" href="#" target="_blank"
+         rel="noopener" aria-disabled="true"><i class="ti ti-external-link me-2"></i>{{ t('report.open_new_tab') }}</a>
+      {% endif %}
+      {% if 'grid' in data_views %}
+      <button type="button" class="btn btn-outline-secondary d-none" id="grid-print" data-for-view="grid" disabled>
+        <i class="ti ti-printer me-2"></i>{{ t('report.print_pdf') }}</button>
+      {% endif %}
+      {% if bi and bi.mode == 'LINK' %}
+      <a class="btn btn-outline-secondary d-none" data-for-view="bi" href="{{ bi.url }}" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-external-link me-2"></i>{{ t('report.open_new_tab') }}</a>
+      {% endif %}
+      {% if definition.can_export %}
+      <div class="btn-list d-none" id="export-buttons" data-for-view="grid">
+        <a class="btn btn-outline-success disabled" data-export="xlsx" href="#" aria-disabled="true"><i class="ti ti-file-spreadsheet me-2"></i>{{ t('report.export_xlsx') }}</a>
+        <a class="btn btn-outline-secondary disabled" data-export="csv" href="#" aria-disabled="true"><i class="ti ti-file-text me-2"></i>{{ t('report.export_csv') }}</a>
+        <a class="btn btn-outline-secondary disabled" data-export="txt" href="#" aria-disabled="true"><i class="ti ti-file-description me-2"></i>{{ t('report.export_txt') }}</a>
+      </div>
+      {% endif %}
+    </div>
+    <div class="ms-auto d-flex align-items-center gap-2 text-secondary small">
+      <span id="data-time"></span>
+      <span class="badge bg-azure-lt d-none" id="cached-badge">{{ t('report.cached') }}</span>
+      <span class="badge bg-green-lt d-none" id="fresh-badge">{{ t('report.fresh') }}</span>
+      <span id="row-count"></span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="alert alert-warning m-3 d-none" id="stale-alert" role="alert"></div>
+    <div class="alert alert-danger m-3 d-none" id="error-alert" role="alert"></div>
+    <div class="text-center text-secondary py-5 d-none" id="waiting">{{ t('report.waiting') }}</div>
+    <div class="text-center py-5 d-none" id="spinner">
+      <div class="spinner-border text-primary" role="status"></div>
+      <div class="text-secondary mt-2">{{ t('report.running') }}</div>
+    </div>
+    {% for v in definition.views %}
+    <div class="d-none" data-pane="{{ v.key }}" role="tabpanel">
+      {% if not v.ok %}
+      <div class="alert alert-danger m-3" role="alert">
+        <div class="d-flex">
+          <div><i class="ti ti-alert-circle me-2"></i></div>
+          <div>
+            <h4 class="alert-title">{{ t('error.' ~ v.error.code) }}</h4>
+            <div class="text-secondary">{{ t('error.code') }}: <code>{{ v.error.code }}</code></div>
+            {% if v.error.detail %}<pre class="mt-2 mb-0">{{ v.error.detail }}</pre>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% elif v.key == 'grid' %}
+      <div id="grid" class="drs-grid"></div>
+      {% elif v.key == 'html' %}
+      <iframe id="html-frame" class="drs-frame" title="{{ r.name }}"></iframe>
+      {% elif bi and bi.mode == 'LINK' %}
+      <iframe id="bi-frame" class="drs-frame" title="{{ r.name }}" data-src="{{ bi.url }}" referrerpolicy="no-referrer"></iframe>
+      {% elif bi and bi.mode == 'EMBED' %}
+      <div id="bi-embed" class="drs-frame" data-dashboard="{{ bi.dashboard_id }}" data-superset="{{ bi.superset_url }}"></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static('vendor/tabulator/tabulator.min.js') }}"></script>
+{% if bi and bi.mode == 'EMBED' %}<script src="{{ static('vendor/superset-embedded-sdk/embedded-sdk.min.js') }}"></script>{% endif %}
+<script src="{{ static('js/report.js') }}"></script>
+{% endblock %}

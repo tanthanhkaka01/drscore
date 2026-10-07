@@ -1,0 +1,20 @@
+{# DRS override of sqladmin's flash.html: the same toasts, shown without an inline script
+   (the Content-Security-Policy of DRS allows scripts from 'self' only). #}
+{% with messages = get_flashed_messages(request) %}
+{% if messages %}
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  {% for message in messages %}
+  <div class="toast show admin-toast text-bg-{{ message.category }}" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      {% if message.title %}
+      <div class="toast-header">{{ message.title }}</div>
+      {% endif %}
+      <div class="toast-body">{{ message.message }}</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+        aria-label="Close"></button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}

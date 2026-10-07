@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ t('error.title') }}{% endblock %}
+{% block header %}
+<div class="page-pretitle">{{ t('error.code') }}: {{ code }}</div>
+<h2 class="page-title">{% if report_name is defined and report_name %}{{ report_name }}{% else %}{{ t('error.title') }}{% endif %}</h2>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <div class="alert alert-danger mb-3" role="alert">
+      <div class="d-flex">
+        <div><i class="ti ti-alert-circle me-2"></i></div>
+        <div>
+          <h4 class="alert-title">{{ message }}</h4>
+          <div class="text-secondary">{{ t('error.code') }}: <code>{{ code }}</code></div>
+        </div>
+      </div>
+    </div>
+    {% if detail %}
+    <ul>{% for k, v in detail.items() %}<li><strong>{{ k }}</strong>: {{ v }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if admin_detail %}
+    <div class="alert alert-secondary" role="alert">
+      <h4 class="alert-title">{{ t('error.admin_detail') }}</h4>
+      <pre class="mb-0">{{ admin_detail }}</pre>
+    </div>
+    {% endif %}
+    <a href="/" class="btn btn-primary"><i class="ti ti-arrow-left me-2"></i>{{ t('error.back') }}</a>
+  </div>
+</div>
+{% endblock %}

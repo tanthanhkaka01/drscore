@@ -1,0 +1,27 @@
+# /etc/systemd/system/drs.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now drs
+#   sudo systemctl status drs ; journalctl -u drs -f
+[Unit]
+Description=DRS - Dynamic Report System
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=drs
+Group=drs
+WorkingDirectory=/opt/drs
+EnvironmentFile=/etc/drs/drs.env
+# `serve` creates / migrates the DRS database first ([app] auto_migrate), then starts [app] workers.
+ExecStart=/opt/drs/.venv/bin/python -m drs serve
+Restart=on-failure
+RestartSec=5
+# Hardening: DRS writes only under /opt/drs/runtime (logs, demo source).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/drs/runtime
+
+[Install]
+WantedBy=multi-user.target

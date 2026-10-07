@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ t('home.title') }}{% endblock %}
+{% block header %}
+<div class="page-pretitle">{{ app_name }}</div>
+<h2 class="page-title">{{ t('home.title') }}</h2>
+{% endblock %}
+{% block header_actions %}
+{% if menu %}
+<div class="input-icon">
+  <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+  <input type="search" id="report-search" class="form-control" placeholder="{{ t('home.search') }}"
+         aria-label="{{ t('home.search') }}">
+</div>
+{% endif %}
+{% endblock %}
+{% block content %}
+{% if not menu %}
+<div class="empty">
+  <div class="empty-icon"><i class="ti ti-file-off fs-1"></i></div>
+  <p class="empty-title">{{ t('home.empty.title') }}</p>
+  <p class="empty-subtitle text-secondary">{{ t('home.empty.text') }}</p>
+</div>
+{% else %}
+<div class="row row-cards" id="report-groups">
+  {% for g in menu %}
+  <div class="col-md-6 col-xl-4" data-group>
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-{{ g.icon or 'folder' }} me-2 text-primary"></i>{{ g.name }}</h3>
+        <div class="card-actions"><span class="badge bg-secondary-lt">{{ t('home.reports_count', n=g.reports | length) }}</span></div>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for r in g.reports %}
+        <a href="/reports/{{ r.code }}" class="list-group-item list-group-item-action" data-report
+           data-search="{{ (r.name ~ ' ' ~ r.code) | lower }}">
+          <div class="d-flex align-items-center">
+            <div class="text-truncate">
+              <div class="text-reset">{{ r.name }}</div>
+              <div class="text-secondary small">{{ r.code }}{% if r.description %} · {{ r.description }}{% endif %}</div>
+            </div>
+            <span class="badge bg-azure-lt ms-auto">{{ t('report.type.' ~ r.type) }}</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div class="empty d-none" id="no-match">
+  <p class="empty-title">{{ t('home.no_match') }}</p>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ static('js/home.js') }}"></script>{% endblock %}

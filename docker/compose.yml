@@ -1,0 +1,70 @@
+# PostgreSQL (DRS database + Superset metadata) and Apache Superset, for the BI milestone and for
+# PostgreSQL test runs. Docker Engine on Linux (free); not Docker Desktop. DRS itself runs with
+# plain Python and does not need a container.
+#
+#   cp docker/.env.example docker/.env      # then edit the passwords and keys
+#   docker compose -f docker/compose.yml --env-file docker/.env up -d postgres
+#   docker compose -f docker/compose.yml --env-file docker/.env run --rm superset-init
+#   docker compose -f docker/compose.yml --env-file docker/.env up -d superset
+#
+# See docs/superset-setup.md.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in docker/.env}
+      DRS_DB_PASSWORD: ${DRS_DB_PASSWORD:?set it in docker/.env}
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:?set it in docker/.env}
+      SUPERSET_READER_PASSWORD: ${SUPERSET_READER_PASSWORD:?set it in docker/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-drs-init.sh:ro
+    ports:
+      # *_BIND = the address of this host the port is published on (127.0.0.1: this machine only).
+      - "${POSTGRES_BIND:-0.0.0.0}:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+
+  superset-init:
+    build: ./superset
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/drs/superset_config.py
+    volumes:
+      - ./superset/superset_config.py:/app/drs/superset_config.py:ro
+    # A literal block with an explicit line continuation. Written as a folded scalar, YAML kept
+    # the line break in front of "--lastname": create-admin stopped at a prompt and bash then ran
+    # "--lastname" as a command, so no admin account was made and `superset init` never ran.
+    command:
+      - bash
+      - -c
+      - |
+        superset db upgrade &&
+        superset fab create-admin --username "$${SUPERSET_ADMIN_USER}" --firstname Superset --lastname Admin \
+          --email admin@localhost --password "$${SUPERSET_ADMIN_PASSWORD}" &&
+        superset init
+
+  superset:
+    build: ./superset
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/drs/superset_config.py
+    volumes:
+      - ./superset/superset_config.py:/app/drs/superset_config.py:ro
+    ports:
+      # SUPERSET_PORT is also read by the Superset image itself: it must stay a plain number.
+      - "${SUPERSET_BIND:-0.0.0.0}:${SUPERSET_PORT:-8088}:8088"
+
+volumes:
+  postgres-data:

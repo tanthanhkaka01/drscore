@@ -1,0 +1,51 @@
+# Real config files hold environment-specific values; only the examples are committed.
+config/*.toml
+!config/*.example.toml
+
+runtime/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Docker secrets
+docker/.env
+
+# Environment files hold passwords and keys (the service's drs.env, a copy of docker/.env);
+# only the *.example files are committed.
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+
+# Private keys and certificates with a key.
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Copies of a DRS database: a dump holds password hashes and the encrypted datasource passwords.
+*.dump
+*.bak
+*.sqlite3
+*.sqlite3-*
+
+# Logs name users, addresses and queries.
+*.log
+
+# Release archives: a second copy of the code, built outside git.
+*.zip
+
+# The test suite is kept out of the repository (owner, 2026-10-07).
+tests/
+
+# The build specification names the servers of the first installation (owner, 2026-10-07).
+DRS_dynamic_report_system_spec.md
+
+# Local assistant files: session settings record the commands that were run, passwords included.
+.claude/
+CLAUDE.md

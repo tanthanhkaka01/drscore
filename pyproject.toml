@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drs"
+version = "0.1.0"
+description = "DRS - Dynamic Report System"
+requires-python = ">=3.11"
+# Every dependency is pinned and listed in THIRD_PARTY_LICENSES.md (licence gate, spec section 4).
+dependencies = [
+    "fastapi==0.142.2",
+    "pydantic==2.13.5",
+    "uvicorn==0.54.0",
+    "jinja2==3.1.6",
+    "python-multipart==0.0.32",
+    "sqlalchemy==2.1.3",
+    "alembic==1.20.0",
+    "psycopg[binary]==3.3.6",
+    "pyodbc==5.3.0",
+    "pymssql==2.4.3",
+    "oracledb==26.0.1",
+    "argon2-cffi==25.1.0",
+    "cryptography==50.0.2",
+    "authlib==1.8.0",
+    "httpx==0.28.1",
+    "xlsxwriter==3.2.9",
+    "sqladmin==0.32.0",
+    "wtforms==3.2.2",
+    "babel==2.18.0",
+    "itsdangerous==2.2.0",
+    "greenlet==3.5.6",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==9.1.1",
+    "openpyxl==3.1.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["drs*"]
+
+[tool.setuptools.package-data]
+drs = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py",
+       "web/templates/**/*", "web/i18n/*.json", "web/static/**/*",
+       "admin/templates/**/*", "admin/translations/*.po"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
