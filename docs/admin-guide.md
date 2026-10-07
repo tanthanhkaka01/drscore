@@ -31,10 +31,10 @@ administrator's browser.
 ## Move reports between databases: metadata export / import
 
 ```bash
-python -m drs metadata export --out reports.json                 # everything
-python -m drs metadata export --out emp.json --report EMP_LIST   # one report and what it needs
-python -m drs metadata import --in reports.json --dry-run        # show what would change
-python -m drs metadata import --in reports.json
+python -m drscore metadata export --out reports.json                 # everything
+python -m drscore metadata export --out emp.json --report EMP_LIST   # one report and what it needs
+python -m drscore metadata import --in reports.json --dry-run        # show what would change
+python -m drscore metadata import --in reports.json
 ```
 
 The file (JSON) holds datasources, report groups, reports with their parameters, columns and row
@@ -78,7 +78,7 @@ table names work.
 - Remove it: `DELETE FROM drs_report WHERE report_code = '...';` - its parameters, columns, row
   filters, grants and current snapshots go with it. Snapshots already moved to
   `drs_report_snapshot_history` stay.
-- Check definitions: `python -m drs report validate`.
+- Check definitions: `python -m drscore report validate`.
 
 Useful columns of `drs_report`: `sort_order` (decimal: 1.5 goes between 1 and 2), `is_active`,
 `grid_enabled` (false hides the grid and its exports), `html_design_uri`, `bi_design_uri`.
@@ -106,17 +106,17 @@ choosing; do not repeat the value in it.
 options query of the second parameter uses the first one as a bind, by its name:
 
 ```sql
--- parameter company_id (select):        SELECT CompanyId, CompanyName FROM org.Company
--- parameter business_unit_id (select):  SELECT BusinessUnitId, BusinessUnitName FROM org.BusinessUnit
---                                        WHERE CompanyId = :company_id AND LevelNumber = 2
+-- parameter company_id (select):     SELECT company_id, company_name FROM company
+-- parameter department_id (select):  SELECT department_id, department_name FROM department
+--                                     WHERE company_id = :company_id
 ```
 
 The parameter it uses must come before it (`sort_order`); `report validate` / **Check** says so
 otherwise. On the report page the second list is filled again as soon as the first one changes
 (htmx asks `GET /api/reports/CODE/params/NAME/options`), also along a chain of three or more, and
 what was chosen stays chosen when it is still in the new list. While nothing is chosen in the first
-one the query runs with NULL: `CompanyId = :company_id` then gives an empty list and no error;
-write `(:company_id IS NULL OR CompanyId = :company_id)` to show everything instead. When the
+one the query runs with NULL: `company_id = :company_id` then gives an empty list and no error;
+write `(:company_id IS NULL OR company_id = :company_id)` to show everything instead. When the
 report runs, a value that is not in the list of the chosen company is refused like any other value
 that is not an option.
 
@@ -124,8 +124,8 @@ that is not an option.
 
 | Write | Gives |
 | --- | --- |
-| `A1A`, `100`, `1.5`, `2026-01-31`, `2026-01-31 08:00`, `true` | that value, in the parameter's type |
-| `A1A,B2B` | several values of a multiselect |
+| `AAA`, `100`, `1.5`, `2026-01-31`, `2026-01-31 08:00`, `true` | that value, in the parameter's type |
+| `AAA,B2B` | several values of a multiselect |
 | `@today`, `@yesterday`, `@week_start`, `@month_start`, `@month_end`, `@prev_month_start`, `@prev_month_end`, `@year_start`, `@year_end` | that day (date / datetime parameters) |
 | `@now` | the current date and time |
 | `@today-7d`, `@month_start-1m`, `@today+2w`, `@year_start-1y` | a day before / after, in days `d`, weeks `w`, months `m`, years `y` |

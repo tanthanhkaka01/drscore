@@ -1,6 +1,6 @@
 -- Run once by a PostgreSQL administrator (psql -U postgres -f create_drs_database.sql).
 -- Creates the login DRS uses and its database. DRS itself creates the schemas "drs" and "drs_bi"
--- and every table on its first start (`serve`, or `python -m drs db upgrade`).
+-- and every table on its first start (`serve`, or `python -m drscore db upgrade`).
 -- Replace the password; it goes into the DRS_DB_PASSWORD environment variable, not into a file.
 
 CREATE ROLE drs_app LOGIN PASSWORD 'change-me';

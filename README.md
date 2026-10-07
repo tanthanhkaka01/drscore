@@ -2,7 +2,7 @@
 
 A web portal for reports where a report is **data, not code**: rows in the DRS database say which
 source to read, which SQL or procedure to run, which parameters to ask for, how to show the result
-and who may see it. The full specification is `DRS_dynamic_report_system_spec.md`.
+and who may see it.
 
 Status: **milestone 8 (admin pages, metadata export / import, audit log)** done, on top of
 milestone 6 (BI with Superset, without row-level security in the guest token) and milestone 5 (design registry, HTML, report views as tabs) - the web portal on Tabler (sign-in, menu
@@ -12,19 +12,31 @@ the "no design, no view" rule, on top of the report engine (SQL Server 2008 R2+,
 PostgreSQL, SQLite sources; JSON cache with history and lock), permissions and the dual-engine DRS
 database.
 
+## Install
+
+```bash
+pip install drscore
+python -m drscore init                            # config/, designs/, runtime/ in this folder (or DRS_HOME)
+python -m drscore serve                           # http://127.0.0.1:8080 - admin / admin, changed at the first sign-in
+```
+
+The database is SQLite under `runtime/` until `config/database.toml` says otherwise. From a copy of
+this repository instead: `pip install .`, then copy `config/*.example.toml` to `config/*.toml`.
+Running on a server, as a service or in containers: `docs/deployment.md`.
+
 ## Quick look with the demo
 
 ```bash
-python -m drs db upgrade
-python -m drs seed-demo                       # prints the demo passwords once
-python -m drs serve                           # http://127.0.0.1:8080, sign in as hr_a1a, hr_all, viewer or admin
+python -m drscore db upgrade
+python -m drscore seed-demo                       # prints the demo passwords once
+python -m drscore serve                           # http://127.0.0.1:8080, sign in as hr_aaa, hr_all, viewer or admin
 ```
 
 Or from the command line:
 
 ```bash
-python -m drs report run --code EMP_LIST --as-user hr_a1a
-python -m drs grant show --user hr_all
+python -m drscore report run --code EMP_LIST --as-user hr_aaa
+python -m drscore grant show --user hr_all
 ```
 
 ## The portal
@@ -78,7 +90,7 @@ UPDATE drs_report SET bi_design_uri = 'https://bi.company.local/superset/dashboa
 ```
 
 A tab whose design is missing shows "This report has no design yet" (`DESIGN_NOT_SET`); the other
-tabs work. `python -m drs report validate` lists the state of every design.
+tabs work. `python -m drscore report validate` lists the state of every design.
 
 Print / PDF: the Layout tab and the Grid tab have a "Print / Save PDF" button that opens the
 browser's print dialog (choose "Save as PDF"); the Grid prints every row the user may see. A
@@ -86,7 +98,8 @@ Superset dashboard is saved as PDF with Superset's own "Download" menu.
 
 ## BI with Apache Superset
 
-A BI report with `bi_dataset_table` feeds a table of the DRS database (`drs_bi.<name>`) from its
+A BI report with `bi_dataset_table` feeds a table (`drs_bi.<name>` on PostgreSQL; table `<name>` of
+the datasets file `runtime/bi/datasets.sqlite3` on SQLite) from its
 result, following its retention; a Superset dashboard designed on that table is shown in the
 Dashboard tab, embedded with a guest token issued by DRS (the user needs no Superset account).
 Setup: `docker/compose.yml` and `docs/superset-setup.md`. Row-level security in the guest token is
@@ -125,19 +138,19 @@ DBeaver keeps it:
 | Any other driver option | `options_json` | `--option KEY=VALUE` |
 
 The password is asked at a hidden prompt and stored encrypted; `DRS_SECRET_KEY` must be set
-(`python -m drs secret new-key` prints one).
+(`python -m drscore secret new-key` prints one).
 
 ```bash
-python -m drs datasource add HRMS_PROD --type mssql --host 10.0.0.8 --database HRMS --user drs_ro \
+python -m drscore datasource add HRMS_PROD --type mssql --host 10.0.0.8 --database HRMS --user drs_ro \
     --description "HRMS production, read-only login"
-python -m drs datasource add HRMS_OLD --type mssql --host 10.0.0.5 --instance SQL2008 --database HR \
+python -m drscore datasource add HRMS_OLD --type mssql --host 10.0.0.5 --instance SQL2008 --database HR \
     --user drs_ro --ssl-mode disable --driver "ODBC Driver 17 for SQL Server"
-python -m drs datasource add ERP --type oracle --host 10.0.0.9 --database ORCLPDB1 --schema HR --user drs_ro
-python -m drs datasource add DWH --type postgresql --host 10.0.0.7 --database dwh --schema report \
+python -m drscore datasource add ERP --type oracle --host 10.0.0.9 --database ORCLPDB1 --schema HR --user drs_ro
+python -m drscore datasource add DWH --type postgresql --host 10.0.0.7 --database dwh --schema report \
     --user drs_ro --ssl-mode require
-python -m drs datasource show HRMS_PROD          # every setting, never the password
-python -m drs datasource test HRMS_PROD          # connect and run a trivial query
-python -m drs datasource set-password HRMS_PROD  # new password, encrypted
+python -m drscore datasource show HRMS_PROD          # every setting, never the password
+python -m drscore datasource test HRMS_PROD          # connect and run a trivial query
+python -m drscore datasource set-password HRMS_PROD  # new password, encrypted
 ```
 
 The login of a source must be read-only there (SELECT, and EXECUTE on the report procedures).
@@ -158,9 +171,9 @@ psql -U postgres -f deploy/postgres/create_drs_database.sql   # login drs_app + 
 python3 -m venv .venv && .venv/bin/pip install .
 cp config/database.example.toml config/database.toml          # active = "postgresql", [postgresql] host / user
 cp config/app.example.toml config/app.toml
-.venv/bin/python -m drs secret new-key                        # once; keep the key safe
+.venv/bin/python -m drscore secret new-key                        # once; keep the key safe
 export DRS_DB_PASSWORD='...' DRS_SECRET_KEY='<the key>'      # a service reads them from /etc/drs/drs.env
-.venv/bin/python -m drs serve          # creates schema "drs", every table and the administrator, then serves
+.venv/bin/python -m drscore serve          # creates schema "drs", every table and the administrator, then serves
 ```
 
 `serve` connects, creates or migrates the DRS database (`[app] auto_migrate = true`), gives a
@@ -184,8 +197,8 @@ py -3 -m venv .venv
 pip install -e ".[test]"
 Copy-Item config\database.example.toml config\database.toml
 Copy-Item config\app.example.toml config\app.toml
-python -m drs db upgrade
-python -m drs db check
+python -m drscore db upgrade
+python -m drscore db check
 ```
 
 Linux:
@@ -197,8 +210,8 @@ python3 -m venv .venv
 pip install -e ".[test]"
 cp config/database.example.toml config/database.toml
 cp config/app.example.toml config/app.toml
-python -m drs db upgrade
-python -m drs db check
+python -m drscore db upgrade
+python -m drscore db check
 ```
 
 The real config files are git-ignored; only the `*.example.toml` files are committed. The config
@@ -213,7 +226,7 @@ active = "sqlite"        # or "postgresql"
 ```
 
 To switch: change `active` (or set the environment variable `DRS_DB_ACTIVE`), then run
-`python -m drs db upgrade`. No code changes.
+`python -m drscore db upgrade`. No code changes.
 
 For PostgreSQL, fill the `[postgresql]` section and put the password in the environment variable it
 names (default `DRS_DB_PASSWORD`). The tables are created in the schema `schema` (default `drs`);
@@ -221,7 +234,7 @@ names (default `DRS_DB_PASSWORD`). The tables are created in the schema `schema`
 
 ## Secrets
 
-`python -m drs secret new-key` prints a new encryption key. Put it in the environment variable named
+`python -m drscore secret new-key` prints a new encryption key. Put it in the environment variable named
 by `app.secret_key_env` (default `DRS_SECRET_KEY`). It encrypts datasource passwords.
 
 ## Tests
@@ -238,34 +251,34 @@ run uses a throw-away schema, dropped at the end. Use a test database, never a p
 
 | Command | Purpose |
 | --- | --- |
-| `python -m drs db upgrade` | Create / migrate the DRS database on the active engine |
-| `python -m drs db check` | Active engine, migration version, every table reachable |
-| `python -m drs secret new-key` | Print a new encryption key |
-| `python -m drs serve [--host H] [--port P] [--workers N]` | Create / migrate the DRS database if needed, check the set-up, start the web server |
-| `python -m drs user add NAME [--display-name D] [--email E] [--admin] [--sso-subject S] [--no-password]` | Add a user; the password is asked at a hidden prompt |
-| `python -m drs user list / disable / enable / set-password / set-admin [--off]` | Users |
-| `python -m drs user attr set USER NAME VALUE... / remove USER NAME [VALUE] / list USER` | Row-filter attributes (`*` = every value) |
-| `python -m drs role add CODE [--name N] / list / member add CODE USER / member remove CODE USER` | Roles |
-| `python -m drs grant group CODE / grant report CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
-| `python -m drs revoke group CODE / revoke report CODE --user U \| --role R` | Remove a grant |
-| `python -m drs grant show --user U` | What a user can see, and through which grant |
+| `python -m drscore db upgrade` | Create / migrate the DRS database on the active engine |
+| `python -m drscore db check` | Active engine, migration version, every table reachable |
+| `python -m drscore secret new-key` | Print a new encryption key |
+| `python -m drscore serve [--host H] [--port P] [--workers N]` | Create / migrate the DRS database if needed, check the set-up, start the web server |
+| `python -m drscore user add NAME [--display-name D] [--email E] [--admin] [--sso-subject S] [--no-password]` | Add a user; the password is asked at a hidden prompt |
+| `python -m drscore user list / disable / enable / set-password / set-admin [--off]` | Users |
+| `python -m drscore user attr set USER NAME VALUE... / remove USER NAME [VALUE] / list USER` | Row-filter attributes (`*` = every value) |
+| `python -m drscore role add CODE [--name N] / list / member add CODE USER / member remove CODE USER` | Roles |
+| `python -m drscore grant group CODE / grant report CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
+| `python -m drscore revoke group CODE / revoke report CODE --user U \| --role R` | Remove a grant |
+| `python -m drscore grant show --user U` | What a user can see, and through which grant |
 
 The first administrator is made by `serve`: a DRS database without an administrator gets user
 `admin` with the password `admin`. That password opens only the account page, where it must be
 replaced at the first sign-in. Another administrator:
 
 ```bash
-python -m drs user add NAME --display-name "Administrator" --admin
+python -m drscore user add NAME --display-name "Administrator" --admin
 ```
 
 | Command | Purpose |
 | --- | --- |
-| `python -m drs datasource add / list / test` | Report sources |
-| `python -m drs report run --code C --as-user U [--param k=v ...] [--format grid\|json] [--refresh] [--out F]` | Run a report exactly as that user gets it |
-| `python -m drs report validate [--code C]` | Check report definitions and design state |
-| `python -m drs cache purge [--report C]` | Move every expired snapshot to the history |
-| `python -m drs cache clear --report C` | Move every snapshot of one report to the history |
-| `python -m drs cache warm [--report C]` | Run reports with their default parameters ahead of the users |
-| `python -m drs metadata export --out F [--report C ...]` | Report definitions, datasources (no secrets), users (no passwords), roles and grants as one JSON file |
-| `python -m drs metadata import --in F [--dry-run]` | Create / update them in this DRS database, matched by code (e.g. SQLite to PostgreSQL) |
-| `python -m drs seed-demo [--force]` | Demo source, reports, role and users |
+| `python -m drscore datasource add / list / test` | Report sources |
+| `python -m drscore report run --code C --as-user U [--param k=v ...] [--format grid\|json] [--refresh] [--out F]` | Run a report exactly as that user gets it |
+| `python -m drscore report validate [--code C]` | Check report definitions and design state |
+| `python -m drscore cache purge [--report C]` | Move every expired snapshot to the history |
+| `python -m drscore cache clear --report C` | Move every snapshot of one report to the history |
+| `python -m drscore cache warm [--report C]` | Run reports with their default parameters ahead of the users |
+| `python -m drscore metadata export --out F [--report C ...]` | Report definitions, datasources (no secrets), users (no passwords), roles and grants as one JSON file |
+| `python -m drscore metadata import --in F [--dry-run]` | Create / update them in this DRS database, matched by code (e.g. SQLite to PostgreSQL) |
+| `python -m drscore seed-demo [--force]` | Demo source, reports, role and users |

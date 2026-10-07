@@ -13,20 +13,32 @@ from werkzeug.security import check_password_hash
 
 SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
 
-# Superset's own metadata (users, dashboards, charts). By default its own database in the
-# PostgreSQL of docker/compose.yml. SUPERSET_DB_HOST / _PORT / _NAME / _USER point it at another
-# server, and SUPERSET_DB_SCHEMA keeps it in one schema of a database it shares (the DRS database):
-# every table of Superset is then created in that schema and nowhere else.
-_schema = os.environ.get("SUPERSET_DB_SCHEMA") or ""
-SQLALCHEMY_DATABASE_URI = URL.create(
-    "postgresql+psycopg2",
-    username=os.environ.get("SUPERSET_DB_USER") or "superset",
-    password=os.environ["SUPERSET_DB_PASSWORD"],  # escaped here: "#" or "@" in it is no problem
-    host=os.environ.get("SUPERSET_DB_HOST") or "postgres",
-    port=int(os.environ.get("SUPERSET_DB_PORT") or 5432),
-    database=os.environ.get("SUPERSET_DB_NAME") or "superset",
-    query={"options": f"-csearch_path={_schema}"} if _schema else {},
-).render_as_string(hide_password=False)
+# Superset's own metadata (users, dashboards, charts).
+#
+# Without SUPERSET_DB_PASSWORD: Superset's default, a SQLite file in its home folder
+# (/app/superset_home - keep that folder on a volume). Nothing to install.
+#
+# With it: PostgreSQL. By default the database "superset" of the postgres service of
+# docker/compose.yml; SUPERSET_DB_HOST / _PORT / _NAME / _USER point it at another server, and
+# SUPERSET_DB_SCHEMA keeps it in one schema of a database it shares (the DRS database): every table
+# of Superset is then created in that schema and nowhere else.
+if os.environ.get("SUPERSET_DB_PASSWORD"):
+    _schema = os.environ.get("SUPERSET_DB_SCHEMA") or ""
+    SQLALCHEMY_DATABASE_URI = URL.create(
+        "postgresql+psycopg2",
+        username=os.environ.get("SUPERSET_DB_USER") or "superset",
+        password=os.environ["SUPERSET_DB_PASSWORD"],  # escaped here: "#" or "@" in it is no problem
+        host=os.environ.get("SUPERSET_DB_HOST") or "postgres",
+        port=int(os.environ.get("SUPERSET_DB_PORT") or 5432),
+        database=os.environ.get("SUPERSET_DB_NAME") or "superset",
+        query={"options": f"-csearch_path={_schema}"} if _schema else {},
+    ).render_as_string(hide_password=False)
+
+# The datasets of a DRS that runs on SQLite are one SQLite file (database.toml, [sqlite] bi_path),
+# mounted read-only at the path DRS_BI_SQLITE names. Superset refuses SQLite connections unless
+# told otherwise; only its administrators create connections.
+if os.environ.get("DRS_BI_SQLITE"):
+    PREVENT_UNSAFE_DB_CONNECTIONS = False
 
 # Embedded dashboards (spec 14.3): a dashboard designed here is shown inside the DRS portal with a
 # short-lived guest token issued by the DRS server. The user needs no Superset account.

@@ -1,0 +1,574 @@
+# Vietnamese translation of the sqladmin interface and of the DRS admin pages.
+# sqladmin strings: from sqladmin 0.32.0 translations/admin.pot. DRS strings: drscore/admin/web.py.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: vi\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+# --- sqladmin
+msgid "List"
+msgstr "Danh sách"
+
+msgid "Details"
+msgstr "Chi tiết"
+
+msgid "Create"
+msgstr "Thêm mới"
+
+msgid "Edit"
+msgstr "Sửa"
+
+msgid "Delete"
+msgstr "Xóa"
+
+msgid "Export"
+msgstr "Xuất"
+
+msgid "Import"
+msgstr "Nhập"
+
+msgid "Access"
+msgstr "Truy cập"
+
+msgid "Page"
+msgstr "Trang"
+
+msgid "Permissions"
+msgstr "Quyền"
+
+msgid "You are not allowed to grant: %(permissions)s"
+msgstr "Bạn không được cấp: %(permissions)s"
+
+msgid "New %(name)s"
+msgstr "Thêm %(name)s"
+
+msgid "Cancel"
+msgstr "Hủy"
+
+msgid "Save"
+msgstr "Lưu"
+
+msgid "Save and continue editing"
+msgstr "Lưu và sửa tiếp"
+
+msgid "Save and add another"
+msgstr "Lưu và thêm tiếp"
+
+msgid "Column"
+msgstr "Cột"
+
+msgid "Value"
+msgstr "Giá trị"
+
+msgid "Go Back"
+msgstr "Quay lại"
+
+msgid "Edit %(name)s"
+msgstr "Sửa %(name)s"
+
+msgid "Save as new"
+msgstr "Lưu thành bản mới"
+
+msgid "Logout"
+msgstr "Đăng xuất"
+
+msgid "Language"
+msgstr "Ngôn ngữ"
+
+msgid "Import CSV"
+msgstr "Nhập CSV"
+
+msgid "You are not authorized to view these records."
+msgstr "Bạn không có quyền xem các bản ghi này."
+
+msgid "Actions"
+msgstr "Thao tác"
+
+msgid "Delete selected items"
+msgstr "Xóa các mục đã chọn"
+
+msgid "Search"
+msgstr "Tìm"
+
+msgid "Select all"
+msgstr "Chọn tất cả"
+
+msgid "Select item"
+msgstr "Chọn mục"
+
+msgid "View"
+msgstr "Xem"
+
+msgid "Showing %(start)s to %(end)s of %(count)s items"
+msgstr "Hiển thị %(start)s–%(end)s / %(count)s mục"
+
+msgid "prev"
+msgstr "trước"
+
+msgid "next"
+msgstr "sau"
+
+msgid "Show"
+msgstr "Hiện"
+
+msgid "%(size)s / Page"
+msgstr "%(size)s / trang"
+
+msgid "Filters"
+msgstr "Bộ lọc"
+
+msgid "Login to %(title)s"
+msgstr "Đăng nhập %(title)s"
+
+msgid "Username"
+msgstr "Tên đăng nhập"
+
+msgid "Enter username"
+msgstr "Nhập tên đăng nhập"
+
+msgid "Password"
+msgstr "Mật khẩu"
+
+msgid "Login"
+msgstr "Đăng nhập"
+
+msgid "Close"
+msgstr "Đóng"
+
+msgid "Done"
+msgstr "Xong"
+
+msgid "Clear filter"
+msgstr "Bỏ lọc"
+
+msgid "Apply Filter"
+msgstr "Lọc"
+
+msgid "Please confirm"
+msgstr "Vui lòng xác nhận"
+
+msgid "Yes"
+msgstr "Đồng ý"
+
+msgid "Choose CSV file"
+msgstr "Chọn file CSV"
+
+msgid "No file selected"
+msgstr "Chưa chọn file"
+
+msgid "Skip invalid rows and continue import"
+msgstr "Bỏ qua dòng lỗi và nhập tiếp"
+
+msgid "Import progress"
+msgstr "Tiến độ nhập"
+
+msgid "%(processed)s/%(total)s rows processed"
+msgstr "Đã xử lý %(processed)s/%(total)s dòng"
+
+msgid "%(imported)s imported, %(skipped)s skipped, %(processed)s/%(total)s rows processed"
+msgstr "Đã nhập %(imported)s, bỏ qua %(skipped)s, xử lý %(processed)s/%(total)s dòng"
+
+msgid "%(imported)s imported, %(skipped)s skipped, %(processed)s/%(total)s rows processed - saving valid rows... (%(seconds)ss)"
+msgstr "Đã nhập %(imported)s, bỏ qua %(skipped)s, xử lý %(processed)s/%(total)s dòng - đang lưu các dòng hợp lệ... (%(seconds)ss)"
+
+msgid "Import result"
+msgstr "Kết quả nhập"
+
+msgid "Missed rows"
+msgstr "Dòng bị bỏ qua"
+
+msgid "Download CSV"
+msgstr "Tải CSV"
+
+msgid "Download TXT"
+msgstr "Tải TXT"
+
+msgid "Refresh list"
+msgstr "Tải lại danh sách"
+
+# --- DRS admin pages
+
+msgid "Access log"
+msgstr "Nhật ký truy cập"
+
+msgid "Active"
+msgstr "Đang dùng"
+
+msgid "Administrator"
+msgstr "Quản trị viên"
+
+msgid "Align"
+msgstr "Căn lề"
+
+msgid "Attribute"
+msgstr "Thuộc tính"
+
+msgid "Audit log"
+msgstr "Nhật ký thay đổi"
+
+msgid "Authentication"
+msgstr "Xác thực"
+
+msgid "Back to the portal"
+msgstr "Về trang chủ"
+
+msgid "BI dashboard"
+msgstr "Dashboard BI"
+
+msgid "BI dataset table"
+msgstr "Bảng dữ liệu BI"
+
+msgid "Can export"
+msgstr "Được xuất file"
+
+msgid "Can refresh"
+msgstr "Được làm mới"
+
+msgid "Check"
+msgstr "Kiểm tra"
+
+msgid "Code"
+msgstr "Mã"
+
+msgid "Connect timeout (s)"
+msgstr "Thời gian chờ kết nối (giây)"
+
+msgid "Create BI table"
+msgstr "Tạo bảng BI"
+
+msgid "Open report"
+msgstr "Mở báo cáo"
+
+msgid "Database / service"
+msgstr "Cơ sở dữ liệu / service"
+
+msgid "Datasource"
+msgstr "Nguồn dữ liệu"
+
+msgid "Datasources"
+msgstr "Nguồn dữ liệu"
+
+msgid "Default schema"
+msgstr "Schema mặc định"
+
+msgid "Default value"
+msgstr "Giá trị mặc định"
+
+msgid "Description"
+msgstr "Mô tả"
+
+msgid "Driver"
+msgstr "Driver"
+
+msgid "E-mail"
+msgstr "E-mail"
+
+msgid "Exported"
+msgstr "Xuất ra file"
+
+msgid "Failed sign-ins"
+msgstr "Số lần đăng nhập sai"
+
+msgid "Filterable"
+msgstr "Cho lọc"
+
+msgid "Footer"
+msgstr "Dòng tổng"
+
+msgid "Format"
+msgstr "Định dạng"
+
+msgid "Frozen"
+msgstr "Cố định"
+
+msgid "Granted at"
+msgstr "Cấp lúc"
+
+msgid "Granted by"
+msgstr "Người cấp"
+
+msgid "Grid column"
+msgstr "Cột lưới"
+
+msgid "Grid columns"
+msgstr "Cột lưới"
+
+msgid "Grid view"
+msgstr "Xem dạng lưới"
+
+msgid "Group"
+msgstr "Nhóm"
+
+msgid "Group grant"
+msgstr "Quyền theo nhóm"
+
+msgid "Group grants"
+msgstr "Quyền theo nhóm"
+
+msgid "HTML design"
+msgstr "Mẫu HTML"
+
+msgid "Icon"
+msgstr "Biểu tượng"
+
+msgid "Input"
+msgstr "Kiểu nhập"
+
+msgid "Label"
+msgstr "Nhãn"
+
+msgid "Last sign-in"
+msgstr "Đăng nhập gần nhất"
+
+msgid "Leave empty to keep the current password. Changing it ends the user's sessions."
+msgstr "Để trống để giữ mật khẩu hiện tại. Đổi mật khẩu sẽ đăng xuất mọi phiên của người dùng."
+
+msgid "Leave empty to keep the stored password. Stored encrypted, never shown."
+msgstr "Để trống để giữ mật khẩu đã lưu. Mật khẩu được mã hóa, không bao giờ hiển thị."
+
+msgid "Locked until"
+msgstr "Khóa đến"
+
+msgid "Logs"
+msgstr "Nhật ký"
+
+msgid "Max length"
+msgstr "Độ dài tối đa"
+
+msgid "Max rows"
+msgstr "Số dòng tối đa"
+
+msgid "Maximum"
+msgstr "Tối đa"
+
+msgid "Members"
+msgstr "Thành viên"
+
+msgid "Minimum"
+msgstr "Tối thiểu"
+
+msgid "Multi-value binding"
+msgstr "Cách truyền nhiều giá trị"
+
+msgid "Must change password"
+msgstr "Phải đổi mật khẩu"
+
+msgid "Name"
+msgstr "Tên"
+
+msgid "Name in SQL"
+msgstr "Tên trong SQL"
+
+msgid "New password"
+msgstr "Mật khẩu mới"
+
+msgid "Opens on"
+msgstr "Mở ở tab"
+
+msgid "Options (JSON)"
+msgstr "Danh sách chọn (JSON)"
+
+msgid "Options datasource"
+msgstr "Nguồn của danh sách chọn"
+
+msgid "Options query"
+msgstr "Truy vấn danh sách chọn"
+
+msgid "Oracle connect by"
+msgstr "Oracle kết nối theo"
+
+msgid "Order"
+msgstr "Thứ tự"
+
+msgid "Other options (JSON)"
+msgstr "Tùy chọn khác (JSON)"
+
+msgid "Parameter"
+msgstr "Tham số"
+
+msgid "Parameters"
+msgstr "Tham số"
+
+msgid "Pattern"
+msgstr "Mẫu (regex)"
+
+msgid "Port"
+msgstr "Cổng"
+
+msgid "Report"
+msgstr "Báo cáo"
+
+msgid "Report grant"
+msgstr "Quyền theo báo cáo"
+
+msgid "Report grants"
+msgstr "Quyền theo báo cáo"
+
+msgid "Report group"
+msgstr "Nhóm báo cáo"
+
+msgid "Report groups"
+msgstr "Nhóm báo cáo"
+
+msgid "Reports"
+msgstr "Báo cáo"
+
+msgid "Required"
+msgstr "Bắt buộc"
+
+msgid "Restricted"
+msgstr "Hạn chế"
+
+msgid "Result column"
+msgstr "Cột kết quả"
+
+msgid "Retention (s)"
+msgstr "Thời gian lưu cache (giây)"
+
+msgid "Role"
+msgstr "Vai trò"
+
+msgid "Roles"
+msgstr "Vai trò"
+
+msgid "Row filter"
+msgstr "Lọc dòng"
+
+msgid "Row filters"
+msgstr "Lọc dòng"
+
+msgid "SQL / procedure"
+msgstr "SQL / thủ tục"
+
+msgid "SQL Server instance"
+msgstr "Instance SQL Server"
+
+msgid "SSL"
+msgstr "SSL"
+
+msgid "SSO subject"
+msgstr "Định danh SSO"
+
+msgid "Serve old data on error"
+msgstr "Dùng dữ liệu cũ khi lỗi"
+
+msgid "Server"
+msgstr "Máy chủ"
+
+msgid "Snapshot history"
+msgstr "Lịch sử cache"
+
+msgid "Sortable"
+msgstr "Cho sắp xếp"
+
+msgid "Test connection"
+msgstr "Thử kết nối"
+
+msgid "Test run"
+msgstr "Chạy thử"
+
+msgid "Timeout (s)"
+msgstr "Thời gian chờ (giây)"
+
+msgid "Trust server certificate"
+msgstr "Tin chứng chỉ máy chủ"
+
+msgid "Type"
+msgstr "Kiểu"
+
+msgid "Unlock"
+msgstr "Mở khóa"
+
+msgid "User"
+msgstr "Người dùng"
+
+msgid "User attribute"
+msgstr "Thuộc tính người dùng"
+
+msgid "User attributes"
+msgstr "Thuộc tính người dùng"
+
+msgid "User name"
+msgstr "Tên đăng nhập"
+
+msgid "Users"
+msgstr "Người dùng"
+
+msgid "Users and access"
+msgstr "Người dùng và quyền"
+
+msgid "Value (* = every value)"
+msgstr "Giá trị (* = mọi giá trị)"
+
+msgid "Visible"
+msgstr "Hiển thị"
+
+msgid "Width (px)"
+msgstr "Độ rộng (px)"
+
+msgid "Action"
+msgstr "Thao tác"
+
+msgid "After"
+msgstr "Sau"
+
+msgid "Before"
+msgstr "Trước"
+
+msgid "Browser"
+msgstr "Trình duyệt"
+
+msgid "By"
+msgstr "Người thực hiện"
+
+msgid "Client IP"
+msgstr "IP máy khách"
+
+msgid "Created"
+msgstr "Tạo lúc"
+
+msgid "Duration (ms)"
+msgstr "Thời gian chạy (ms)"
+
+msgid "Error"
+msgstr "Lỗi"
+
+msgid "Error message"
+msgstr "Nội dung lỗi"
+
+msgid "Expired at"
+msgstr "Hết hạn lúc"
+
+msgid "From cache"
+msgstr "Từ cache"
+
+msgid "Moved to history"
+msgstr "Chuyển vào lịch sử lúc"
+
+msgid "Object"
+msgstr "Đối tượng"
+
+msgid "Reason"
+msgstr "Lý do"
+
+msgid "Request id"
+msgstr "Mã request"
+
+msgid "Rows"
+msgstr "Số dòng"
+
+msgid "Run by"
+msgstr "Người chạy"
+
+msgid "Snapshot"
+msgstr "Snapshot"
+
+msgid "Status"
+msgstr "Trạng thái"
+
+msgid "Table"
+msgstr "Bảng"
+
+msgid "Time"
+msgstr "Thời gian"

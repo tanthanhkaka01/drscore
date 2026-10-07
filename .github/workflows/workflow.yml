@@ -1,0 +1,75 @@
+# Release: a tag v<version> builds the package, publishes it to PyPI and makes the GitHub release.
+#
+# PyPI trusts this file and nothing else ("trusted publisher": repository tanthanhkaka01/drscore,
+# workflow workflow.yml, environment pypi) - no password or token is stored anywhere. The file name
+# and the environment name are part of that agreement: renaming either stops the publishing.
+#
+#   1. set version in pyproject.toml, commit, push
+#   2. git tag v1.2.3 && git push origin v1.2.3
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The tag is the version of pyproject.toml
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, but pyproject.toml says $version"; exit 1; }
+      - name: Build the sdist and the wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: The wheel holds the package and nothing else
+        run: |
+          python - <<'EOF'
+          import pathlib, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          top = sorted({n.split("/")[0] for n in zipfile.ZipFile(wheel).namelist()})
+          print(wheel.name, top)
+          assert [t for t in top if not t.endswith(".dist-info")] == ["drscore"], top
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # the short-lived identity PyPI checks against its trusted publisher
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: GitHub release with the two files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

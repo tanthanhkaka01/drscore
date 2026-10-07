@@ -1,7 +1,8 @@
 # Deploying DRS
 
-How to install DRS on a server, connect it to PostgreSQL, run it as a service behind HTTPS, and
-keep it running. Every step below was run end to end on a clean copy (Linux, Python 3.13,
+How to install DRS on a server, run it as a service behind HTTPS, and keep it running. The DRS
+database is SQLite by default - nothing to install; section 2 is for the installation that moves
+to PostgreSQL. Every step below was run end to end on a clean copy (Linux, Python 3.13,
 PostgreSQL 16): empty database -> `serve` -> schema and tables created -> sign in -> reports, admin
 pages, datasource "Test connection".
 
@@ -33,14 +34,19 @@ Sample files used below are in `deploy/`: `drs.env.example`, `systemd/drs.servic
 | Server | 2 CPU, 4 GB RAM, 20 GB disk | More RAM for large reports: a snapshot is held in memory while it is built (`[limits] max_snapshot_mb`, default 200). |
 | OS | Linux (Ubuntu 22.04+, RHEL 9+, Debian 12+) or Windows Server 2016+ | |
 | Python | 3.11 or newer | `python3 --version` |
-| PostgreSQL | 14 or newer (tested with 16) | Holds the DRS database: report definitions, users, grants, cache, logs. Can be on another server. |
+| PostgreSQL | optional: 14 or newer (tested with 16) | Instead of the default SQLite files, for the DRS database: report definitions, users, grants, cache, logs. Can be on another server. |
 | Reverse proxy | nginx (Linux) or IIS + ARR (Windows) | For HTTPS. Optional on a trusted intranet. |
 | Network | DRS -> PostgreSQL (5432), DRS -> each report source (1433 SQL Server, 1521 Oracle, 5432 PostgreSQL), users -> DRS (443) | |
 
-Everything is free (see `THIRD_PARTY_LICENSES.md`). SQLite needs nothing and is fine for design and
-test, but use PostgreSQL in production.
+Everything is free (see `THIRD_PARTY_LICENSES.md`). By default the DRS database is SQLite: two files
+under `runtime/` - `drs.sqlite3` (DRS itself) and `bi/datasets.sqlite3` (the BI datasets, the only
+file a BI tool is given) - with nothing to install, and a backup is a copy of them. Move to
+PostgreSQL (section 2, then `active = "postgresql"` in `config/database.toml`) when several DRS
+processes or servers must share one database, or when a DBA should own it.
 
 ## 2. Prepare PostgreSQL
+
+Only for `active = "postgresql"`; with the default SQLite, go to section 3.
 
 A PostgreSQL administrator runs this once (sample: `deploy/postgres/create_drs_database.sql`):
 
@@ -163,7 +169,7 @@ All keys are listed in [section 11](#11-configuration-reference).
 | Variable | What |
 | --- | --- |
 | `DRS_DB_PASSWORD` | password of `drs_app` (named by `password_env`) |
-| `DRS_SECRET_KEY` | key that encrypts datasource passwords. Create it once: `.venv/bin/python -m drs secret new-key`. **Keep a copy in a safe place** - without it the stored datasource passwords cannot be read and must be entered again. |
+| `DRS_SECRET_KEY` | key that encrypts datasource passwords. Create it once: `.venv/bin/python -m drscore secret new-key`. **Keep a copy in a safe place** - without it the stored datasource passwords cannot be read and must be entered again. |
 | `DRS_HOME` | the DRS folder, when the service does not start in it |
 | `DRS_SUPERSET_PASSWORD` | only with Superset |
 | any name given to `datasource add --password-env NAME` | that source's password |
@@ -184,13 +190,13 @@ To run the CLI by hand on Linux with the same values:
 ```bash
 cd /opt/drs
 set -a; . /etc/drs/drs.env; set +a        # as root, or copy the values into your shell
-.venv/bin/python -m drs db check
+.venv/bin/python -m drscore db check
 ```
 
 ## 5. First start
 
 ```bash
-.venv/bin/python -m drs serve
+.venv/bin/python -m drscore serve
 ```
 
 What happens:
@@ -206,21 +212,21 @@ DRS listening on http://127.0.0.1:8080 (2 workers); users open https://reports.c
    says which setting to check.
 2. With `auto_migrate = true` it creates schema `drs` and every table, or applies the migrations of
    a newer DRS version. Two servers starting at once do not migrate together (PostgreSQL advisory
-   lock). With `auto_migrate = false` it refuses to start until `python -m drs db upgrade` is run -
+   lock). With `auto_migrate = false` it refuses to start until `python -m drscore db upgrade` is run -
    choose this if database changes must be done by a DBA at a planned time.
 3. A database without an administrator is given the default one: user `admin`, password `admin`.
    That password opens only the account page: the first sign-in must replace it (at least
    `[auth.local] min_password_length` characters) before any other page, the admin pages or the
    API answer. Nothing is created when an administrator already exists (a disabled one counts),
    when another user is named `admin`, or with `[auth.local] enabled = false`; then add one with
-   `python -m drs user add NAME --display-name "..." --admin`.
+   `python -m drscore user add NAME --display-name "..." --admin`.
 4. It warns about a missing `DRS_SECRET_KEY`, a mismatch between `base_url` (https) and
    `cookie_secure`, a missing designs folder, and the lack of an active administrator.
 
 Then, once:
 
 ```bash
-.venv/bin/python -m drs db check                                                 # every table "ok"
+.venv/bin/python -m drscore db check                                                 # every table "ok"
 ```
 
 Open `base_url`, sign in as `admin` / `admin` and choose a new password; DRS then asks to sign in
@@ -229,13 +235,13 @@ can do it instead. The menu entry "Administration" (`/admin/`) manages
 everything else without SQL: datasources (with "Test connection"), report groups, reports
 ("Test run"), parameters, columns, users, roles, grants, logs (see `docs/admin-guide.md`).
 
-To look around first: `python -m drs seed-demo` adds a demo source, six reports and demo users (it
+To look around first: `python -m drscore seed-demo` adds a demo source, six reports and demo users (it
 prints their passwords; an existing `admin` is kept). Remove them later in the admin pages, or do
 not run it on production.
 
 Reports designed on a test DRS (SQLite) are carried over with
-`python -m drs metadata export --out reports.json` there and
-`python -m drs metadata import --in reports.json` here (then `datasource set-password` for each
+`python -m drscore metadata export --out reports.json` there and
+`python -m drscore metadata import --in reports.json` here (then `datasource set-password` for each
 source).
 
 `GET /healthz` answers `{"status": "ok", "database": "postgresql"}` - use it for monitoring.
@@ -251,45 +257,60 @@ sudo systemctl status drs
 journalctl -u drs -f          # start-up messages; the application log is runtime/logs/drs.log
 ```
 
-The unit runs `python -m drs serve` as user `drs`, with `/etc/drs/drs.env`, restarts on failure,
+The unit runs `python -m drscore serve` as user `drs`, with `/etc/drs/drs.env`, restarts on failure,
 and may write only to `/opt/drs/runtime`.
 
 ### Run in containers (Docker)
 
-Instead of a Python environment and a systemd unit: DRS and Apache Superset as two containers
-(`deploy/docker/docker-compose.yml`), on a server whose PostgreSQL already holds the DRS database
-and Superset's own schema (`docs/superset-setup.md`). The image of DRS (`deploy/docker/Dockerfile`)
-carries Python, DRS and the ODBC driver for SQL Server sources; everything of the installation
-stays in one folder on the host:
+Instead of a Python environment and a systemd unit: `deploy/docker/docker-compose.yml`. The image
+(`deploy/docker/Dockerfile`) carries Python and drscore, nothing else; everything of the
+installation stays in one folder on the host:
 
 ```
 /opt/drs/
   docker-compose.yml     deploy/docker/docker-compose.yml
-  .env                   DRS_DB_PASSWORD, DRS_SECRET_KEY, DRS_SUPERSET_PASSWORD       (chmod 600)
-  superset.env           the SUPERSET_* values and DRS_PORTAL_ORIGIN of docker/.env.example (chmod 600)
-  config/                app.toml, database.toml
+  .env                   DRS_SECRET_KEY (chmod 600); DRS_PORT / DRS_UID / DRS_GID when not 8080 / 1000 / 1000
+  config/                app.toml, database.toml - copies of config/*.example.toml
   designs/               HTML designs
-  runtime/               logs
-  src/                   the DRS source the two images are built from
+  runtime/               logs, and with the default SQLite the two database files
+  src/                   the drscore source the image is built from
 ```
 
-In `config/app.toml`: `host = "0.0.0.0"`, `base_url` = the address users open, and
-`[bi.superset] base_url` = the address their browser reaches Superset at, `api_url =
-"http://superset:8088"` (the name of the Superset container, from the DRS container).
-`DRS_PORTAL_ORIGIN` in `superset.env` is that same `base_url`, and it is the "allowed domain" of
-every embedded dashboard. `DRS_SECRET_KEY` and `SUPERSET_SECRET_KEY` are the ones the databases
-were written with: passwords stored there are encrypted with them.
+In `config/app.toml`: `host = "0.0.0.0"`, and `base_url` = the address users open. `DRS_PORT` in
+`.env` is `[app] port`.
 
 ```bash
 cd /opt/drs
-docker compose up -d --build        # first start, and after src/ was replaced (an upgrade)
-docker compose restart drs          # after config/ changed; designs/ needs no restart
-docker compose logs -f drs          # start-up messages; the application log is runtime/logs/drs.log
-docker compose exec drs python -m drs db check
+mkdir -p config designs runtime/bi
+docker compose up -d --build            # first start, and after src/ was replaced (an upgrade)
+docker compose restart drscore          # after config/ changed; designs/ needs no restart
+docker compose logs -f drscore          # start-up messages; the application log is runtime/logs/drs.log
+docker compose exec drscore python -m drscore db check
 ```
 
-Both containers restart with the server (`restart: unless-stopped`). The DRS container runs as the
-owner of the folder (`DRS_UID` / `DRS_GID` in `.env`, 1000 by default).
+The container restarts with the server (`restart: unless-stopped`) and runs as the owner of the
+folder (`DRS_UID` / `DRS_GID`). With PostgreSQL instead of SQLite: `active = "postgresql"` in
+`config/database.toml` and `DRS_DB_PASSWORD` in `.env`.
+
+**SQL Server sources.** The image has no Microsoft ODBC driver: it is Microsoft's software under
+Microsoft's licence, and drscore does not distribute it. Either give the datasource
+`driver = "pymssql"` (open source, in the image), or build your own image with the driver -
+`deploy/docker/Dockerfile.msodbc` downloads it from Microsoft, and building it is your acceptance
+of Microsoft's terms - and name that image in `docker-compose.yml`.
+
+**Apache Superset** is optional, as profile `bi` of the same file (`docs/superset-setup.md`):
+
+```bash
+# superset.env (chmod 600): SUPERSET_SECRET_KEY, SUPERSET_GUEST_TOKEN_SECRET, DRS_PORTAL_ORIGIN
+docker compose --profile bi run --rm superset-init     # once: its tables, and admin / admin
+docker compose --profile bi up -d --build
+```
+
+Superset keeps its own data in a SQLite file on the volume `superset-home`, or in PostgreSQL when
+`superset.env` sets `SUPERSET_DB_PASSWORD`. `[bi.superset] base_url` is the address a browser
+reaches Superset at, `api_url = "http://superset:8088"`, and `DRS_PORTAL_ORIGIN` is DRS's
+`base_url` - also the "allowed domain" of every embedded dashboard. `DRS_SECRET_KEY` and
+`SUPERSET_SECRET_KEY` must never change: passwords stored in the databases are encrypted with them.
 
 ## 7. Run as a service (Windows)
 
@@ -300,13 +321,13 @@ With NSSM (free, public domain, <https://nssm.cc>), from an elevated PowerShell 
 Get-Service DRS
 ```
 
-The script registers `python -m drs serve` as service "DRS" (automatic start), stores the
+The script registers `python -m drscore serve` as service "DRS" (automatic start), stores the
 environment variables in the service's registry key (administrators only), and writes console
 output to `runtime\logs\service.*.log`. Stop / start: `Stop-Service DRS`, `Start-Service DRS`.
 Remove: `nssm remove DRS confirm`.
 
 For the CLI in a PowerShell window, set the variables first:
-`$env:DRS_DB_PASSWORD='...'; $env:DRS_SECRET_KEY='...'; .\.venv\Scripts\python -m drs db check`.
+`$env:DRS_DB_PASSWORD='...'; $env:DRS_SECRET_KEY='...'; .\.venv\Scripts\python -m drscore db check`.
 
 ## 8. HTTPS and the reverse proxy
 
@@ -341,11 +362,11 @@ location / {
 | --- | --- |
 | PostgreSQL | nothing (psycopg is installed with DRS) |
 | Oracle 12.1+ | nothing (python-oracledb thin mode). Oracle 11.2: Oracle Instant Client + `driver = "thick"`, option `lib_dir` |
-| SQL Server 2012+ | Microsoft ODBC Driver 18 for SQL Server (free). Linux: Microsoft's package repository, `msodbcsql18` + `unixODBC`; Windows: the installer from Microsoft |
+| SQL Server 2012+ | Microsoft ODBC Driver 18 for SQL Server (free). Linux: Microsoft's package repository, `msodbcsql18` + `unixODBC`; Windows: the installer from Microsoft. Or `driver = "pymssql"`, which needs nothing. The ODBC driver is Microsoft's software under Microsoft's licence: DRS does not contain it, and neither does the container image (`deploy/docker/Dockerfile.msodbc` adds it to an image you build yourself) |
 | SQL Server 2008 R2 | `driver = "pymssql"` (installed with DRS), or ODBC Driver 17/18 with `Encrypt=no` |
 
 Add a source in the admin pages (Datasources -> Create, "New password", then "Test connection") or
-with `python -m drs datasource add` (see `README.md`). Give DRS a **read-only** login on each
+with `python -m drscore datasource add` (see `README.md`). Give DRS a **read-only** login on each
 source (SELECT, and EXECUTE on report procedures).
 
 ## 10. Operations: logs, backup, upgrade
@@ -357,7 +378,7 @@ source (SELECT, and EXECUTE on report procedures).
 - Table `drs_access_log` - who opened / ran / exported which report (admin pages: Logs -> Access
   log). Table `drs_audit_log` - every change of definitions, users and grants.
 - The cache needs no job: expired snapshots move to `drs_report_snapshot_history` when a report is
-  opened; `python -m drs cache purge` moves the rest (schedule it nightly if you like).
+  opened; `python -m drscore cache purge` moves the rest (schedule it nightly if you like).
 
 **Backup**
 
@@ -380,7 +401,7 @@ sudo -u drs .venv/bin/pip install .
 sudo systemctl start drs          # auto_migrate applies the new migrations; journalctl shows them
 ```
 
-With `auto_migrate = false`: run `python -m drs db upgrade` before starting.
+With `auto_migrate = false`: run `python -m drscore db upgrade` before starting.
 
 **Move from SQLite to PostgreSQL**: `metadata export` on the SQLite DRS, prepare PostgreSQL
 (section 2), set `active = "postgresql"`, start (tables are created), `metadata import`,
@@ -395,6 +416,7 @@ With `auto_migrate = false`: run `python -m drs db upgrade` before starting.
 | --- | --- | --- |
 | `active` | - | `"sqlite"` or `"postgresql"`; the environment variable `DRS_DB_ACTIVE` overrides it |
 | `[sqlite] path` | `runtime/drs.sqlite3` | file of the SQLite DRS database (relative to the DRS folder) |
+| `[sqlite] bi_path` | `runtime/bi/datasets.sqlite3` | file of the BI datasets on SQLite, in a folder of its own: the only thing a BI tool is given to read |
 | `[postgresql] host`, `port` | `127.0.0.1`, `5432` | server |
 | `database` | `drs` | database name |
 | `user` | `drs_app` | login |
@@ -450,7 +472,7 @@ and the names used by `password_env` / `--password-env`.
 | `The DRS database password is not set: define the environment variable DRS_DB_PASSWORD` | the variable is missing in the service's environment |
 | `Cannot connect to the DRS database ... password authentication failed` | wrong password, or `pg_hba.conf` does not allow the DRS server |
 | `... permission denied for database drs` | `drs_app` may not create schema `drs`: make it the database owner, or create the schema for it (section 2) |
-| `The DRS database is at revision ..., this version needs ...` | `auto_migrate = false`: run `python -m drs db upgrade` |
+| `The DRS database is at revision ..., this version needs ...` | `auto_migrate = false`: run `python -m drscore db upgrade` |
 | Sign-in "works" but you land on the sign-in page again | `cookie_secure = true` while the site is opened over http |
 | Every save in `/admin/` gives "403 - cross-site request refused" | the proxy does not pass the `Host` header (section 8) |
 | Access log shows the proxy's IP for everyone | `forwarded_allow_ips` does not list the proxy |
@@ -458,7 +480,7 @@ and the names used by `password_env` / `--password-env`.
 | `The encryption key is not set` when saving a datasource password | `DRS_SECRET_KEY` missing in the service environment |
 | `DATASOURCE_UNAVAILABLE ... the password cannot be decrypted with the current key` | `DRS_SECRET_KEY` changed: restore the old key, or set the passwords again |
 
-`python -m drs db check` and `python -m drs report validate` are the first two commands to run.
+`python -m drscore db check` and `python -m drscore report validate` are the first two commands to run.
 
 ## 13. Security checklist
 

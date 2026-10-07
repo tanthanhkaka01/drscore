@@ -1,11 +1,14 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "drs"
-version = "0.1.0"
-description = "DRS - Dynamic Report System"
+name = "drscore"
+version = "1.0.0"
+description = "DRS - Dynamic Report System: reports written in SQL, shown as grids, HTML designs and BI dashboards"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES.md", "drscore/**/LICENSE*", "drscore/**/NOTICE*"]
 requires-python = ">=3.11"
 # Every dependency is pinned and listed in THIRD_PARTY_LICENSES.md (licence gate, spec section 4).
 dependencies = [
@@ -32,6 +35,9 @@ dependencies = [
     "greenlet==3.5.6",
 ]
 
+[project.urls]
+Source = "https://github.com/tanthanhkaka01/drscore"
+
 [project.optional-dependencies]
 test = [
     "pytest==9.1.1",
@@ -39,10 +45,10 @@ test = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["drs*"]
+include = ["drscore*"]
 
 [tool.setuptools.package-data]
-drs = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py",
+drscore = ["examples/*.toml", "migrations/*.py", "migrations/*.mako", "migrations/versions/*.py",
        "web/templates/**/*", "web/i18n/*.json", "web/static/**/*",
        "admin/templates/**/*", "admin/translations/*.po"]
 

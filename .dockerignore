@@ -1,4 +1,4 @@
-# The image takes pyproject.toml and drs/ only (deploy/docker/Dockerfile). Nothing of an
+# The image takes pyproject.toml and drscore/ only (deploy/docker/Dockerfile). Nothing of an
 # installation - configuration, secrets, logs - may reach a build context.
 .git
 .venv

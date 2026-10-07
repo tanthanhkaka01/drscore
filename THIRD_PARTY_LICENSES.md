@@ -3,7 +3,7 @@
 Licence gate of spec section 4 (requirement R02): a dependency is added only after its licence was
 read from the package itself and it is free for commercial use with no feature behind payment.
 `tests/test_licenses.py` fails when a dependency of `pyproject.toml` or a folder of
-`drs/web/static/vendor/` is missing from this file, or when a licence is not on the allowed list.
+`drscore/web/static/vendor/` is missing from this file, or when a licence is not on the allowed list.
 
 Checked on 2026-10-06. "PyPI metadata" means the `License-Expression` / `License` / classifier
 fields of the installed wheel (`importlib.metadata`), which is the package's own declaration.
@@ -29,7 +29,7 @@ fields of the installed wheel (`importlib.metadata`), which is the package's own
 | authlib | 1.8.0 | BSD-3-Clause | PyPI metadata |
 | httpx | 0.28.1 | BSD-3-Clause | PyPI metadata |
 | xlsxwriter | 3.2.9 | BSD-2-Clause | PyPI metadata |
-| sqladmin | 0.32.0 | BSD-3-Clause | PyPI metadata `License-Expression`. Admin pages; ships Tabler, jQuery, Select2, Flatpickr, Font Awesome Free (MIT / SIL OFL-1.1 fonts / CC-BY-4.0 icons), served from the package, no CDN |
+| sqladmin | 0.32.0 | BSD-3-Clause | PyPI metadata `License-Expression`. Admin pages; ships Tabler, jQuery, Select2, Flatpickr, Font Awesome Free (MIT / SIL OFL-1.1 fonts / CC-BY-4.0 icons), served from the package, no CDN. **One file of it is copied into this repository and changed**: `drscore/admin/templates/sqladmin/layout.html`, with sqladmin's licence beside it (`LICENSE.sqladmin`) |
 | wtforms | 3.2.2 | BSD-3-Clause | PyPI metadata (classifier "BSD License"), LICENSE.rst |
 | babel | 2.18.0 | BSD-3-Clause | PyPI metadata (classifier "BSD License"), LICENSE |
 | itsdangerous | 2.2.0 | BSD-3-Clause | PyPI metadata (classifier "BSD License"), LICENSE.txt |
@@ -66,7 +66,7 @@ fields of the installed wheel (`importlib.metadata`), which is the package's own
 | typing-extensions | 4.16.0 | PSF-2.0 | PyPI metadata |
 | typing-inspection | 0.4.4 | MIT | PyPI metadata |
 
-## Front-end libraries (vendored into `drs/web/static/vendor/`)
+## Front-end libraries (vendored into `drscore/web/static/vendor/`)
 
 Each at a pinned version, downloaded from the npm registry, with its licence file copied next to it.
 No CDN is used at run time.

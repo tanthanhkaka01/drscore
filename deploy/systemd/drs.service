@@ -13,7 +13,7 @@ Group=drs
 WorkingDirectory=/opt/drs
 EnvironmentFile=/etc/drs/drs.env
 # `serve` creates / migrates the DRS database first ([app] auto_migrate), then starts [app] workers.
-ExecStart=/opt/drs/.venv/bin/python -m drs serve
+ExecStart=/opt/drs/.venv/bin/python -m drscore serve
 Restart=on-failure
 RestartSec=5
 # Hardening: DRS writes only under /opt/drs/runtime (logs, demo source).

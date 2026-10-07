@@ -1,0 +1,67 @@
+# DRS application configuration. Copy to config/app.toml and edit.
+
+[app]
+name = "DRS"
+base_url = "http://localhost:8080"
+host = "127.0.0.1"
+port = 8080
+default_locale = "vi"                 # "vi" | "en"
+timezone = "Asia/Ho_Chi_Minh"
+secret_key_env = "DRS_SECRET_KEY"     # Fernet key: encrypts datasource passwords
+workers = 1                           # web server processes; 2-4 on a production server
+forwarded_allow_ips = "127.0.0.1"     # reverse proxy (nginx / IIS) trusted for the client IP and https
+auto_migrate = true                   # `serve` creates the schema / tables and applies migrations first
+
+[session]
+idle_minutes = 60
+absolute_hours = 12
+cookie_secure = false                 # true when served over HTTPS
+
+[auth.local]
+enabled = true
+min_password_length = 10
+max_failed_logins = 5
+lockout_minutes = 15
+
+[auth.sso]
+enabled = false
+issuer = ""                           # OpenID Connect issuer URL
+client_id = ""
+client_secret_env = "DRS_SSO_CLIENT_SECRET"
+scopes = ["openid", "profile", "email"]
+match_claim = "preferred_username"    # claim compared with drs_user.sso_subject
+auto_provision = false                # true: create an unknown user, with no grants
+
+[designs]
+root = "designs"                      # folder that holds the HTML design files
+
+[cache]
+# Retention is per report (drs_report.cache_ttl_seconds). When a user opens a report whose snapshot
+# has expired, the snapshot is moved to drs_report_snapshot_history and the data is read again.
+lock_wait_seconds = 180               # how long a second request waits for the first
+lock_stale_seconds = 900              # a lock older than this is taken over
+
+[limits]
+default_max_rows = 50000
+hard_max_rows = 500000
+default_timeout_seconds = 120
+hard_timeout_seconds = 900
+max_snapshot_mb = 200
+
+[export]
+header_source = "label"               # "label" | "field"
+csv_delimiter = ","
+csv_bom = true                        # UTF-8 BOM so Excel reads Vietnamese text
+txt_delimiter = "|"
+txt_delimiter_replacement = "¦"       # replaces a "|" found inside a cell value
+txt_line_ending = "crlf"              # "crlf" | "lf"
+formula_guard = true
+
+[bi.superset]
+enabled = false
+base_url = "http://localhost:8088"    # as the browser reaches Superset
+api_url = "http://localhost:8088"     # as the DRS server reaches Superset
+username = "drs_service"
+password_env = "DRS_SUPERSET_PASSWORD"
+guest_token_ttl_seconds = 300
+check_design = true                   # verify the dashboard exists before showing it

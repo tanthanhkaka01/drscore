@@ -54,7 +54,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA drs_bi TO superset_reader;
 ALTER DEFAULT PRIVILEGES FOR ROLE <drs login> IN SCHEMA drs_bi GRANT SELECT ON TABLES TO superset_reader;
 ```
 
-Schema `drs_bi` exists after the first dataset was loaded (`python -m drs cache warm --report CODE`
+Schema `drs_bi` exists after the first dataset was loaded (`python -m drscore cache warm --report CODE`
 for a report with `bi_dataset_table`). The connection of step 3.1 then names that server; a
 password with special characters is URL-encoded in the address (`#` is `%23`).
 
@@ -86,19 +86,41 @@ passwords are encrypted with it. With the same login as the connection of step 3
 write SQL on that connection can read Superset's own tables: give SQL Lab to administrators only,
 or use two logins.
 
+### DRS on SQLite (the default): the datasets file
+
+With `active = "sqlite"` no PostgreSQL is needed at all. DRS writes the datasets into a file of
+their own, `runtime/bi/datasets.sqlite3` (`[sqlite] bi_path`), one table per report, named as the
+report's "BI dataset table". Superset is given that folder read-only and nothing else of DRS: the
+DRS database, with its password hashes and stored secrets, is another file it never sees.
+`deploy/docker/docker-compose.yml` does it (profile `bi`): the folder is mounted at `/drs_bi`,
+Superset keeps its own data in a SQLite file on a volume, and the connection of step 3.1 is
+
+```
+sqlite:///file:/drs_bi/datasets.sqlite3?mode=ro&uri=true
+```
+
+(written with `file:` - the plain `sqlite:////drs_bi/...` form does not open a read-only folder).
+Superset refuses SQLite connections unless `PREVENT_UNSAFE_DB_CONNECTIONS = False`;
+`superset_config.py` sets it when `DRS_BI_SQLITE` is defined, as that compose file does. Checked on
+Superset 6.1.0: the connection lists the dataset tables, a query returns their rows, and a write
+through it is refused. Steps 3.2 to 3.6 and 4 are the same; in step 3.2 the schema is `main`.
+
 ## 2. Point DRS at that PostgreSQL
 
-`config/database.toml`: `active = "postgresql"`, `database = "drs"`, `user = "drs_app"`,
+Only for `active = "postgresql"`. `config/database.toml`: `database = "drs"`, `user = "drs_app"`,
 `schema = "drs"`, `bi_schema = "drs_bi"`, password in `DRS_DB_PASSWORD`. Then
-`python -m drs db upgrade`.
+`python -m drscore db upgrade`.
 
 ## 3. In Superset (as admin, http://localhost:8088)
 
 First sign-in: user **admin**, password **admin** (`SUPERSET_ADMIN_USER` / `SUPERSET_ADMIN_PASSWORD`
 in `docker/.env`). Superset then shows only its "Reset Password Form" - every other page leads back
-to it and every API call answers 403 - until another password is saved; after that it works
-normally and `admin` no longer signs in. The check is in `docker/superset/superset_config.py`
-(`FLASK_APP_MUTATOR`): a user whose password is still the initial one must change it. It does not
+to it, and an API call made with that browser session answers 403 - until another password is
+saved; after that it works normally and `admin` no longer signs in. The check is in
+`docker/superset/superset_config.py` (`FLASK_APP_MUTATOR`): a user whose password is still the
+initial one must change it. **It guides the person who signs in; it is not a lock**: a program that
+asks Superset's API for a token with admin / admin (`/api/v1/security/login`) is not stopped
+(measured on 6.1.0), so change the password right after the first start. It does not
 concern the viewers of embedded dashboards (guest tokens issued by DRS) nor users without a local
 password. Superset accounts are separate from DRS accounts: only the people who design dashboards
 need one (Settings > List Users); DRS viewers never do.
@@ -109,7 +131,7 @@ need one (Settings > List Users); DRS viewers never do.
 2. **Datasets**: Datasets > + Dataset > schema `drs_bi` > the table named in
    `drs_report.bi_dataset_table` of the report. Create the table from the report's admin page:
    fill in "BI dataset table", save, then **Create BI table** (the report runs with its default
-   parameters). `python -m drs cache warm --report CODE` does the same from a shell; once the
+   parameters). `python -m drscore cache warm --report CODE` does the same from a shell; once the
    dashboard is registered (step 4), opening the Dashboard tab keeps the table up to date.
 3. **Design the dashboard** with charts on that dataset (drag and drop).
 4. **Guest role**: Settings > List Roles > + `DRS_Embedded` with read access to dashboards and
@@ -159,7 +181,7 @@ with row-filter rules cannot use link mode.
 
 The dataset table is rewritten from the report's snapshot, following the report's retention
 (`cache_ttl_seconds`): when someone opens the Dashboard tab after the retention, or when
-`python -m drs cache warm` runs (schedule it to keep dashboards fresh without anyone opening
+`python -m drscore cache warm` runs (schedule it to keep dashboards fresh without anyone opening
 them). The table is replaced in one transaction, so Superset never sees it empty.
 
 Superset can also save a dashboard as PDF or image (Download menu).
@@ -173,4 +195,4 @@ Superset can also save a dashboard as PDF or image (Download menu).
 | An API POST, or DRS's guest token, is refused: `The CSRF session token is missing` (DRS shows `BI_ENGINE_UNAVAILABLE ... guest_token: HTTP 400`) | Superset is served over plain http while its session cookie is marked `Secure`, so the client never sends it back. `"session_cookie_secure": False` in `TALISMAN_CONFIG` (set it True again together with `force_https`). |
 | The Dashboard tab shows `403 Forbidden: You don't have the permission to access the requested resource` | Superset compares the Referer of the frame with the dashboard's "allowed domains". They must hold the portal's address exactly (`http://localhost:8090`, no path). The portal sends its origin for that frame only (`referrerPolicy` in `report.js`); a browser extension that strips the Referer breaks it. |
 | A container cannot reach a server of the office network whose address starts with `172.17.` (time-out) | Docker's default bridge network is `172.17.0.0/16`: inside Docker such an address never leaves the machine. Move Docker off that range (Docker Engine settings: `"bip": "10.213.0.1/24"`, then restart Docker), or - without touching Docker - run a TCP relay on the host and name `host.docker.internal:<port>` in Superset's connection. |
-| The dashboard shows old numbers | The dataset table follows the report's retention: it is rewritten when the Dashboard tab is opened after `cache_ttl_seconds`, or by `python -m drs cache warm --report CODE`. |
+| The dashboard shows old numbers | The dataset table follows the report's retention: it is rewritten when the Dashboard tab is opened after `cache_ttl_seconds`, or by `python -m drscore cache warm --report CODE`. |

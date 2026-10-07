@@ -1,55 +1,88 @@
-# DRS and Apache Superset as two containers, on a server whose PostgreSQL already holds the DRS
-# database (schemas drs, drs_bi) and Superset's own data (schema superset). No database runs here.
+# drscore in a container, and - only when asked for - Apache Superset beside it.
 # See docs/deployment.md, "Run in containers".
 #
 # The installation folder (this file is its docker-compose.yml):
 #
 #   /opt/drs/
 #     docker-compose.yml   this file
-#     .env                 DRS_DB_PASSWORD, DRS_SECRET_KEY, DRS_SUPERSET_PASSWORD (deploy/drs.env.example),
-#                          and DRS_UID / DRS_GID / *_PORT / *_BIND when not the defaults below
-#     superset.env         the SUPERSET_* values and DRS_PORTAL_ORIGIN of docker/.env.example
-#                          (both files chmod 600: Superset never gets DRS's own passwords)
-#     config/              app.toml, database.toml
+#     .env                 DRS_SECRET_KEY; DRS_PORT / DRS_UID / DRS_GID when not the defaults below;
+#                          with PostgreSQL also DRS_DB_PASSWORD; with Superset DRS_SUPERSET_PASSWORD
+#     superset.env         only with Superset: the SUPERSET_* values and DRS_PORTAL_ORIGIN of
+#                          docker/.env.example (both files chmod 600; Superset never gets DRS's keys)
+#     config/              app.toml, database.toml (copies of config/*.example.toml, edited)
 #     designs/             HTML designs
-#     runtime/             logs
-#     src/                 the DRS source the two images are built from
+#     runtime/             logs - and, with the default SQLite, the DRS database (drs.sqlite3) and
+#                          the BI datasets (bi/datasets.sqlite3)
+#     src/                 the drscore source the images are built from
 #
-#   docker compose up -d --build        # first start, and after src/ changed
-#   docker compose restart drs          # after config/ changed
+#   mkdir -p config designs runtime/bi
+#   docker compose up -d --build                      # drscore alone: nothing else is needed
+#   docker compose restart drscore                    # after config/ changed
+#
+#   docker compose --profile bi run --rm superset-init    # Superset, once: its tables and its admin
+#   docker compose --profile bi up -d --build             # drscore and Superset
 
 services:
-  drs:
+  drscore:
     build:
       context: ./src
       dockerfile: deploy/docker/Dockerfile
-    image: drs:latest
-    container_name: drs
+    image: drscore:latest
+    container_name: drscore
     restart: unless-stopped
-    # The owner of config/, designs/ and runtime/ on the host: the logs are written as that user.
+    # The owner of config/, designs/ and runtime/ on the host: database and logs are written as that user.
     user: "${DRS_UID:-1000}:${DRS_GID:-1000}"
     environment:
-      DRS_DB_PASSWORD: ${DRS_DB_PASSWORD:?set it in .env}
-      DRS_SECRET_KEY: ${DRS_SECRET_KEY:?set it in .env}
-      DRS_SUPERSET_PASSWORD: ${DRS_SUPERSET_PASSWORD:-}
+      DRS_SECRET_KEY: ${DRS_SECRET_KEY:?set it in .env (python -m drscore secret new-key prints one)}
+      DRS_DB_PASSWORD: ${DRS_DB_PASSWORD:-}                # only with database.toml active = "postgresql"
+      DRS_SUPERSET_PASSWORD: ${DRS_SUPERSET_PASSWORD:-}    # only with [bi.superset] enabled = true
     volumes:
       - ./config:/drs/config:ro
       - ./designs:/drs/designs:ro
       - ./runtime:/drs/runtime
     ports:
-      - "${DRS_BIND:-0.0.0.0}:${DRS_PORT:-8090}:8090"
+      # DRS_PORT is [app] port of config/app.toml (and host = "0.0.0.0" there).
+      - "${DRS_BIND:-0.0.0.0}:${DRS_PORT:-8080}:${DRS_PORT:-8080}"
 
-  # [bi.superset] api_url = "http://superset:8088" reaches it from the drs container.
-  superset:
+  # Optional (profile "bi"). [bi.superset] api_url = "http://superset:8088" reaches it from drscore.
+  # Its own data: a SQLite file on the volume superset-home, or PostgreSQL when superset.env sets
+  # SUPERSET_DB_PASSWORD (docker/superset/superset_config.py).
+  superset: &superset
+    profiles: ["bi"]
     build: ./src/docker/superset
-    image: drs-superset:6.1.0
-    container_name: drs-superset
+    image: drscore-superset:6.1.0
+    container_name: drscore-superset
     restart: unless-stopped
     env_file: superset.env
     environment:
       SUPERSET_CONFIG_PATH: /app/drs/superset_config.py
+      # The datasets of a DRS on SQLite, as Superset sees them (the mount below). Connection:
+      #   sqlite:///file:/drs_bi/datasets.sqlite3?mode=ro&uri=true   - docs/superset-setup.md
+      DRS_BI_SQLITE: /drs_bi/datasets.sqlite3
     volumes:
       - ./src/docker/superset/superset_config.py:/app/drs/superset_config.py:ro
+      - ./runtime/bi:/drs_bi:ro
+      - superset-home:/app/superset_home
     ports:
       # SUPERSET_PORT is also read by the Superset image itself: it must stay a plain number.
       - "${SUPERSET_BIND:-0.0.0.0}:${SUPERSET_PORT:-8088}:8088"
+
+  # Once, before Superset's first start: creates its tables and its administrator (admin / admin
+  # unless superset.env says otherwise; the first sign-in must change the password).
+  superset-init:
+    <<: *superset
+    profiles: ["bi"]
+    container_name: drscore-superset-init
+    restart: "no"
+    ports: []
+    command:
+      - bash
+      - -c
+      - |
+        superset db upgrade &&
+        superset fab create-admin --username "$${SUPERSET_ADMIN_USER:-admin}" --firstname Superset --lastname Admin \
+          --email admin@localhost --password "$${SUPERSET_ADMIN_PASSWORD:-admin}" &&
+        superset init
+
+volumes:
+  superset-home:
