@@ -254,6 +254,43 @@ journalctl -u drs -f          # start-up messages; the application log is runtim
 The unit runs `python -m drs serve` as user `drs`, with `/etc/drs/drs.env`, restarts on failure,
 and may write only to `/opt/drs/runtime`.
 
+### Run in containers (Docker)
+
+Instead of a Python environment and a systemd unit: DRS and Apache Superset as two containers
+(`deploy/docker/docker-compose.yml`), on a server whose PostgreSQL already holds the DRS database
+and Superset's own schema (`docs/superset-setup.md`). The image of DRS (`deploy/docker/Dockerfile`)
+carries Python, DRS and the ODBC driver for SQL Server sources; everything of the installation
+stays in one folder on the host:
+
+```
+/opt/drs/
+  docker-compose.yml     deploy/docker/docker-compose.yml
+  .env                   DRS_DB_PASSWORD, DRS_SECRET_KEY, DRS_SUPERSET_PASSWORD       (chmod 600)
+  superset.env           the SUPERSET_* values and DRS_PORTAL_ORIGIN of docker/.env.example (chmod 600)
+  config/                app.toml, database.toml
+  designs/               HTML designs
+  runtime/               logs
+  src/                   the DRS source the two images are built from
+```
+
+In `config/app.toml`: `host = "0.0.0.0"`, `base_url` = the address users open, and
+`[bi.superset] base_url` = the address their browser reaches Superset at, `api_url =
+"http://superset:8088"` (the name of the Superset container, from the DRS container).
+`DRS_PORTAL_ORIGIN` in `superset.env` is that same `base_url`, and it is the "allowed domain" of
+every embedded dashboard. `DRS_SECRET_KEY` and `SUPERSET_SECRET_KEY` are the ones the databases
+were written with: passwords stored there are encrypted with them.
+
+```bash
+cd /opt/drs
+docker compose up -d --build        # first start, and after src/ was replaced (an upgrade)
+docker compose restart drs          # after config/ changed; designs/ needs no restart
+docker compose logs -f drs          # start-up messages; the application log is runtime/logs/drs.log
+docker compose exec drs python -m drs db check
+```
+
+Both containers restart with the server (`restart: unless-stopped`). The DRS container runs as the
+owner of the folder (`DRS_UID` / `DRS_GID` in `.env`, 1000 by default).
+
 ## 7. Run as a service (Windows)
 
 With NSSM (free, public domain, <https://nssm.cc>), from an elevated PowerShell in the DRS folder:

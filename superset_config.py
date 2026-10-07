@@ -8,25 +8,14 @@ import os
 
 from flask import flash, jsonify, redirect, request, session
 from flask_login import current_user
-from sqlalchemy.engine import URL
 from werkzeug.security import check_password_hash
 
 SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
 
-# Superset's own metadata (users, dashboards, charts). By default its own database in the
-# PostgreSQL of docker/compose.yml. SUPERSET_DB_HOST / _PORT / _NAME / _USER point it at another
-# server, and SUPERSET_DB_SCHEMA keeps it in one schema of a database it shares (the DRS database):
-# every table of Superset is then created in that schema and nowhere else.
-_schema = os.environ.get("SUPERSET_DB_SCHEMA") or ""
-SQLALCHEMY_DATABASE_URI = URL.create(
-    "postgresql+psycopg2",
-    username=os.environ.get("SUPERSET_DB_USER") or "superset",
-    password=os.environ["SUPERSET_DB_PASSWORD"],  # escaped here: "#" or "@" in it is no problem
-    host=os.environ.get("SUPERSET_DB_HOST") or "postgres",
-    port=int(os.environ.get("SUPERSET_DB_PORT") or 5432),
-    database=os.environ.get("SUPERSET_DB_NAME") or "superset",
-    query={"options": f"-csearch_path={_schema}"} if _schema else {},
-).render_as_string(hide_password=False)
+# Superset's own metadata (users, dashboards, charts) in its own database.
+SQLALCHEMY_DATABASE_URI = (
+    f"postgresql+psycopg2://superset:{os.environ['SUPERSET_DB_PASSWORD']}@postgres:5432/superset"
+)
 
 # Embedded dashboards (spec 14.3): a dashboard designed here is shown inside the DRS portal with a
 # short-lived guest token issued by the DRS server. The user needs no Superset account.

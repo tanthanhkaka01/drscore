@@ -201,6 +201,15 @@ def _choices(values) -> list[tuple[str, str]]:
     return [(v, v) for v in values]
 
 
+def _problem(exc: DRSError, about_defaults: str) -> str:
+    """Why an action that runs a report with its default values failed. A parameter that is required
+    and has no default is not an error of the report: the message says what can be done."""
+    if exc.code != "PARAM_INVALID":
+        return f"{exc.code}: {exc.admin_detail or exc.message}"
+    return (f"{exc.code}: {'; '.join((exc.detail or {}).values())}. This runs with the default values: "
+            f"give these parameters a default, {about_defaults}.")
+
+
 # --------------------------------------------------------------------------------------------
 # Reports
 
@@ -299,10 +308,50 @@ class ReportAdmin(AuditedView, model=Report):
                                           refresh=True, view="grid")
                     return code, None, f"{len(served.rows)} rows, {len(served.outcome.columns)} columns"
                 except DRSError as exc:
-                    detail = exc.detail if exc.code == "PARAM_INVALID" else exc.admin_detail
-                    return code, exc.code, f"{exc.code}: {detail or exc.message}"
+                    return code, exc.code, _problem(exc, 'or use "Open report" to choose them')
             code, error, message = await run_in_threadpool(run)
             flash(request, message, "danger" if error else "success", title=code)
+        return _back(request, self.identity)
+
+    @action(name="open", label=_("Open report"), add_in_detail=True, add_in_list=True)
+    async def open_report(self, request: Request) -> Response:
+        """To the report as a user gets it - the page where its parameters are chosen. "Test run"
+        cannot choose: it runs with the default values only."""
+        pks = _pks(request)
+
+        def code():
+            with self.database.session() as s:
+                report = s.get(Report, int(pks[0]))
+                return report.report_code if report else None
+        found = await run_in_threadpool(code) if pks else None
+        return RedirectResponse(f"/reports/{found}", status_code=303) if found else _back(request, self.identity)
+
+    @action(name="load-bi-dataset", label=_("Create BI table"), add_in_detail=True, add_in_list=True)
+    async def load_bi_dataset(self, request: Request) -> Response:
+        """Runs the report with its default parameters and writes the result to the table named in
+        "BI dataset table" (what ``cache warm`` does). A dashboard is designed on that table, and
+        until the dashboard is registered the report has no Dashboard tab that would create it."""
+        from drs.bi import dataset as bi_dataset
+        from drs.reports.service import get_result, prepare
+
+        for pk in _pks(request):
+            def load(report_id=int(pk)):
+                code = str(report_id)
+                try:
+                    with self.database.session() as s:
+                        report = s.get(Report, report_id)
+                        code, table = report.report_code, report.bi_dataset_table
+                        if not table:
+                            return code, "warning", 'fill in "BI dataset table" first'
+                        prep = prepare(s, report, {}, self.settings)
+                    outcome = get_result(self.database, prep, self.settings, username=self.actor(request))
+                    state = "loaded" if bi_dataset.refresh(self.database, report_id, table, outcome) else "unchanged"
+                    return code, "success", (f"{bi_dataset.display_name(self.database, table)}: {len(outcome.rows)} "
+                                             f"rows, {len(outcome.columns)} columns ({state})")
+                except DRSError as exc:
+                    return code, "danger", _problem(exc, "the table is made from them")
+            code, level, message = await run_in_threadpool(load)
+            flash(request, message, level, title=code)
         return _back(request, self.identity)
 
 
@@ -325,7 +374,9 @@ class ParamAdmin(AuditedView, model=ReportParam):
                       "options_query": TextAreaField}
     form_args = {"data_type": {"choices": _choices(("text", "int", "decimal", "date", "datetime", "bool"))},
                  "input_kind": {"choices": _choices(("input", "select", "multiselect"))},
-                 "multi_bind_mode": {"choices": _choices(("expand", "csv"))}}
+                 "multi_bind_mode": {"choices": _choices(("expand", "csv"))},
+                 # Owner, 2026-10-07: a new parameter is required unless the box is unticked.
+                 "is_required": {"default": True}}
     form_widget_args = {"options_query": {"rows": 4, "class": "form-control font-monospace"}}
     column_labels = {"report": L("Report"), "param_name": L("Name in SQL"), "label": L("Label"),
                      "data_type": L("Type"), "input_kind": L("Input"), "is_required": L("Required"),

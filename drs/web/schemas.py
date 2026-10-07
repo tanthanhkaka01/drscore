@@ -87,6 +87,7 @@ class ParamInfo(_Model):
     required: bool
     default: Any = None  # in the text form the input takes (list for a multiselect)
     options: list[ParamOption] | None = None
+    depends_on: list[str] | None = None  # the parameters its options query uses: it is filled again when they change
     min_value: str | None = None
     max_value: str | None = None
     max_length: int | None = None

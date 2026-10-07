@@ -254,7 +254,15 @@ def canonical_json(values: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------------------------
 # Options of select / multiselect
 
-OptionsLoader = Callable[[ParamDef], list[dict[str, Any]]]
+# (parameter, the values of the parameters placed before it) -> its options. An options query may
+# use those parameters as binds (":company_id"): its options then depend on what is chosen there.
+OptionsLoader = Callable[[ParamDef, dict[str, Any]], list[dict[str, Any]]]
+
+
+def parents_of(p: ParamDef, defs: Sequence[ParamDef]) -> list[str]:
+    """The parameters whose value the options of ``p`` depend on."""
+    names = {d.name for d in defs}
+    return [b for b in binds_of(p.options_query or "") if b in names and b != p.name]
 
 
 class OptionsCache:
@@ -330,7 +338,7 @@ def validate(defs: Sequence[ParamDef], submitted: dict[str, Any] | None, ctx: De
             for v in value if p.is_multi else [value]:
                 _check_bounds(p, v)
             if p.has_options:
-                allowed = {o["value"] for o in (load_options(p) if load_options else static_options(p))}
+                allowed = {o["value"] for o in (load_options(p, values) if load_options else static_options(p))}
                 for v in value if p.is_multi else [value]:
                     if str(to_text(v)) not in allowed:
                         raise ValueError_(f"{to_text(v)!s} is not one of the options")
@@ -340,6 +348,29 @@ def validate(defs: Sequence[ParamDef], submitted: dict[str, Any] | None, ctx: De
     if errors:
         raise DRSError("PARAM_INVALID", detail=errors)
     return values
+
+
+def form_options(defs: Sequence[ParamDef], submitted: dict[str, Any] | None, ctx: DefaultContext,
+                 load_options: OptionsLoader) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """(options of every select / multiselect, the values they were made for) for what is on the
+    form now - the defaults for what is not submitted. Nothing is refused here: a value that cannot
+    be used, or that is no longer among its options, counts as not chosen for the parameters that
+    depend on it."""
+    submitted = submitted or {}
+    values: dict[str, Any] = {}
+    options: dict[str, list[dict[str, Any]]] = {}
+    for p in defs:
+        try:
+            value = _parse_submitted(p, submitted[p.name]) if p.name in submitted else default_for(p, ctx)
+        except ValueError_:
+            value = None
+        chosen = [v for v in ([] if value is None else value if p.is_multi else [value]) if v != ""]
+        if p.has_options:
+            options[p.name] = load_options(p, values)
+            allowed = {o["value"] for o in options[p.name]}
+            chosen = [v for v in chosen if str(to_text(v)) in allowed]
+        values[p.name] = chosen if p.is_multi else (chosen[0] if chosen else None)
+    return options, values
 
 
 def _parse_submitted(p: ParamDef, raw: Any) -> Any:

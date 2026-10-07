@@ -27,7 +27,7 @@ from drs.bi import superset
 from drs.render import design, html
 from drs.render.grid import grid_columns, project
 from drs.reports import cache
-from drs.reports.params import ValueError_, default_for, to_text
+from drs.reports.params import ValueError_, default_for, form_options, parents_of, to_text
 from drs.reports.service import Served, default_context, options_loader, param_defs, run_for_user
 from drs.settings import AppSettings
 from drs.web.schemas import (
@@ -107,13 +107,15 @@ def definition(database: Database, settings: AppSettings, username: str, code: s
         user = _user(s, username)
         report, access = require_report(s, user, code)
         ctx = default_context(settings, user_attributes(s, user))
-        load = options_loader(s, report, settings)
+        defs = param_defs(s, report.report_id)
+        options, _ = form_options(defs, {}, ctx, options_loader(s, report, settings))
         params = []
-        for p in param_defs(s, report.report_id):
+        for p in defs:
             params.append(ParamInfo(
                 name=p.name, label=p.label, data_type=p.data_type, input_kind=p.input_kind,
                 required=p.is_required, default=_input_text(_default(p, ctx), p.data_type),
-                options=[ParamOption(**o) for o in load(p)] if p.has_options else None,
+                options=[ParamOption(**o) for o in options[p.name]] if p.has_options else None,
+                depends_on=parents_of(p, defs) or None,
                 min_value=p.min_value, max_value=p.max_value, max_length=p.max_length,
             ))
         views = view_states(s, report, user, settings)
@@ -125,6 +127,28 @@ def definition(database: Database, settings: AppSettings, username: str, code: s
         return ReportDefinition(report=report_info(report), params=params,
                                 can_export=access.can_export and has_grid, can_refresh=access.can_refresh,
                                 auto_run=auto_run, views=views, default_view=default)
+
+
+def param_options(database: Database, settings: AppSettings, username: str, code: str, name: str,
+                  submitted: dict[str, Any]) -> tuple[ParamInfo, list[str]]:
+    """The options of one select parameter for the values now on the form, and what stays chosen
+    among them. The report page asks for it (htmx) when a parameter the options depend on changes."""
+    with database.session() as s:
+        user = _user(s, username)
+        report, _ = require_report(s, user, code)
+        defs = param_defs(s, report.report_id)
+        p = next((d for d in defs if d.name == name and d.has_options), None)
+        if p is None:
+            raise DRSError("REPORT_NOT_FOUND", admin_detail=f"{code} has no select parameter {name}")
+        ctx = default_context(settings, user_attributes(s, user))
+        for d in defs:  # a form sends a ticked checkbox as "on" and leaves an unticked one out
+            if d.data_type == "bool" and d.input_kind == "input":
+                submitted = {**submitted, d.name: "true" if d.name in submitted else "false"}
+        options, values = form_options(defs, submitted, ctx, options_loader(s, report, settings))
+        chosen = _input_text(values[name], p.data_type)
+        info = ParamInfo(name=p.name, label=p.label, data_type=p.data_type, input_kind=p.input_kind,
+                         required=p.is_required, options=[ParamOption(**o) for o in options[name]])
+        return info, chosen if isinstance(chosen, list) else [] if chosen is None else [chosen]
 
 
 # --------------------------------------------------------------------------------------------

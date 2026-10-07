@@ -1,0 +1,8 @@
+{#- The <option> list of a select parameter. In the report page, and alone: the answer htmx puts
+    into a select whose options depend on another parameter (GET /api/reports/CODE/params/NAME/options). -#}
+{% macro option_list(p, chosen, any_label) -%}
+{% if p.input_kind == 'select' and not p.required %}<option value="">{{ any_label }}</option>{% endif %}
+{% for o in p.options %}
+<option value="{{ o.value }}" {% if o.value in chosen %}selected{% endif %}>{{ o.label }}</option>
+{% endfor %}
+{%- endmacro %}

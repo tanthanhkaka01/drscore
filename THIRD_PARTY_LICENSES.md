@@ -77,6 +77,7 @@ No CDN is used at run time.
 | tabler-icons | 3.49.0 | MIT | npm `@tabler/icons-webfont`, LICENSE file |
 | tabulator | 6.6.1 | MIT | npm `tabulator-tables` package.json, LICENSE file |
 | echarts | 6.1.0 | Apache-2.0 | npm `echarts` package.json, LICENSE and NOTICE files |
+| htmx | 2.0.11 | 0BSD | npm `htmx.org` package.json, LICENSE file; tarball checked against the registry's sha512 |
 | superset-embedded-sdk | 0.4.0 | Apache-2.0 | npm `@superset-ui/embedded-sdk` package.json; bundles `@superset-ui/switchboard` (Apache-2.0) and `jwt-decode` (MIT) |
 
 ## Software used beside DRS (not bundled)

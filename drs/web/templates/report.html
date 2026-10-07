@@ -8,6 +8,7 @@
 {% if r.description %}<div class="text-secondary mt-1">{{ r.description }}</div>{% endif %}
 {% endblock %}
 {% block content %}
+{% from "_param_options.html" import option_list %}
 <script type="application/json" id="page-data">{{ page_data | tojson }}</script>
 
 {% if definition.params %}
@@ -25,18 +26,16 @@
         </label>
         {% else %}
         <label class="form-label {% if p.required %}required{% endif %}" for="{{ id }}">{{ p.label }}</label>
-        {% if p.input_kind == 'select' %}
-        <select class="form-select" id="{{ id }}" name="{{ p.name }}" data-kind="select">
-          {% if not p.required %}<option value="">{{ t('report.any') }}</option>{% endif %}
-          {% for o in p.options %}
-          <option value="{{ o.value }}" {% if o.value == p.default %}selected{% endif %}>{{ o.label }}</option>
-          {% endfor %}
-        </select>
-        {% elif p.input_kind == 'multiselect' %}
-        <select class="form-select" id="{{ id }}" name="{{ p.name }}" data-kind="multi" multiple size="4">
-          {% for o in p.options %}
-          <option value="{{ o.value }}" {% if p.default and o.value in p.default %}selected{% endif %}>{{ o.label }}</option>
-          {% endfor %}
+        {% if p.input_kind in ('select', 'multiselect') %}
+        {# Options that depend on other parameters (its options query uses them): htmx asks for the
+           list again when one of them changes - by hand or because its own list was replaced - and
+           once when the page opens, for the values the browser really shows. #}
+        <select class="form-select" id="{{ id }}" name="{{ p.name }}"
+                {% if p.input_kind == 'select' %}data-kind="select"{% else %}data-kind="multi" multiple size="4"{% endif %}
+                {% if p.depends_on %}hx-get="/api/reports/{{ definition.report.code }}/params/{{ p.name }}/options"
+                hx-include="#param-form"
+                hx-trigger="load{% for d in p.depends_on %}, change from:#p-{{ d }}, htmx:afterSwap from:#p-{{ d }}{% endfor %}"{% endif %}>
+          {{ option_list(p, (p.default or []) if p.input_kind == 'multiselect' else [p.default], t('report.any')) }}
         </select>
         {% else %}
         {% set kinds = {'int': 'number', 'decimal': 'text', 'date': 'date', 'datetime': 'datetime-local'} %}
@@ -157,4 +156,6 @@
 <script src="{{ static('vendor/tabulator/tabulator.min.js') }}"></script>
 {% if bi and bi.mode == 'EMBED' %}<script src="{{ static('vendor/superset-embedded-sdk/embedded-sdk.min.js') }}"></script>{% endif %}
 <script src="{{ static('js/report.js') }}"></script>
+{# Only for a report with a parameter whose options depend on another one (see the form above). #}
+{% if definition.params | selectattr('depends_on') | list %}<script src="{{ static('vendor/htmx/htmx.min.js') }}"></script>{% endif %}
 {% endblock %}

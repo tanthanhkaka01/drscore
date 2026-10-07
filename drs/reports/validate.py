@@ -71,6 +71,7 @@ def check_report(s: Session, r: Report, settings: AppSettings) -> list[tuple[str
     params = [p for p in all_params if p.is_active]
     inactive = {p.param_name for p in all_params if not p.is_active}
     names = {p.param_name for p in params}
+    position = {p.param_name: i for i, p in enumerate(sorted(params, key=lambda p: (p.sort_order, p.param_id)))}
     binds = binds_of(r.query_text or "")
     for b in binds:
         if b in inactive:
@@ -86,6 +87,16 @@ def check_report(s: Session, r: Report, settings: AppSettings) -> list[tuple[str
             warn(f"parameter {p.param_name} is not used by the query")
         if p.input_kind in ("select", "multiselect") and not (p.options_json or p.options_query):
             err(f"parameter {p.param_name}: a {p.input_kind} needs options_json or options_query")
+        # An options query may use other parameters (the units of the chosen company): they must be
+        # known when its options are made, so they come before it.
+        for b in binds_of(p.options_query or ""):
+            if b in inactive:
+                err(f"parameter {p.param_name}: the options query uses :{b}, but parameter {b} is inactive")
+            elif b not in names:
+                err(f"parameter {p.param_name}: the options query uses :{b}, which is not a parameter of the report")
+            elif position[b] >= position[p.param_name]:
+                err(f"parameter {p.param_name}: the options query uses :{b}; place {b} before "
+                    f"{p.param_name} (order)")
         if p.default_value:
             try:
                 default_for(ParamDef.of(p), DefaultContext(now=datetime.now()))

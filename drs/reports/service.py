@@ -32,6 +32,7 @@ from drs.reports.params import (
     canonical,
     canonical_json,
     options_cache,
+    parents_of,
     static_options,
     validate,
 )
@@ -103,16 +104,34 @@ def param_defs(session: Session, report_id: int) -> tuple[ParamDef, ...]:
 
 
 def options_loader(session: Session, report: Report, settings: AppSettings):
-    """Loads the options of a select / multiselect parameter (static or from options_query)."""
-    def load(p: ParamDef) -> list[dict[str, Any]]:
+    """Loads the options of a select / multiselect parameter (static or from options_query).
+
+    An options query may use the parameters placed before it as binds: its options are then those
+    of the values chosen there (a company, then the units of that company). A parameter nothing is
+    chosen for is bound as NULL - what the list shows then is what the query returns for NULL."""
+    defs = param_defs(session, report.report_id)
+    order = {d.name: i for i, d in enumerate(defs)}
+
+    def load(p: ParamDef, values: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         if not p.options_query:
             return static_options(p)
         src = source_of(session, p.options_datasource_id or report.datasource_id,
                         f"options of parameter {p.name}")
-        key = (src, p.options_query)
+        for b in binds_of(p.options_query):
+            if b not in order:
+                raise DRSError("REPORT_MISCONFIGURED", admin_detail=(
+                    f"options of parameter {p.name}: the query uses :{b}, which is not an active parameter "
+                    "of the report"))
+            if order[b] >= order.get(p.name, -1):
+                raise DRSError("REPORT_MISCONFIGURED", admin_detail=(
+                    f"options of parameter {p.name}: the query uses :{b}, which must be placed before "
+                    f"{p.name} (order)"))
+        parents = [d for d in defs if d.name in parents_of(p, defs)]
+        bound = {d.name: (values or {}).get(d.name, [] if d.is_multi else None) for d in parents}
+        key = (src, p.options_query, tuple((k, repr(v)) for k, v in bound.items()))
 
         def run() -> list[dict[str, Any]]:
-            result = executor.run_query(src, p.options_query, (), {}, timeout_seconds=30,
+            result = executor.run_query(src, p.options_query, parents, bound, timeout_seconds=30,
                                         max_rows=10000, max_bytes=10 * 1024 * 1024, tz=settings.tz)
             if len(result.columns) < 1:
                 raise DRSError("REPORT_MISCONFIGURED", admin_detail=f"options of {p.name}: no column")

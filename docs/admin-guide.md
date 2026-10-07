@@ -12,7 +12,7 @@ user menu.
 
 | Menu | Pages | Extra buttons |
 | --- | --- | --- |
-| Reports | report groups, reports, parameters, grid columns, row filters | report: **Test run** (runs it now with the default parameters, as you, and shows the row count or the error), **Check** (the findings of `report validate`) |
+| Reports | report groups, reports, parameters, grid columns, row filters | report: **Test run** (runs it now with the default parameters, as you, and shows the row count or the error; it cannot choose a value, so for a required parameter without a default it says so), **Open report** (to the report's own page, where the parameters are chosen), **Check** (the findings of `report validate`), **Create BI table** (runs it with the default parameters and writes the result to the table named in "BI dataset table", so a Superset dashboard can be designed on it - what `cache warm --report CODE` does) |
 | Datasources | every connection setting, "New password" (stored encrypted, never shown) | **Test connection** |
 | Users and access | users ("New password", ends their sessions; "Must change password": the user's next sign-in opens only the account page until they have chosen a new one), user attributes, roles and members, group grants, report grants | user: **Unlock** (after too many wrong passwords) |
 | Logs | access log (who opened / ran / exported what), audit log (every change), snapshot history | read-only |
@@ -101,6 +101,24 @@ query and stores (`-1`), and `label`, which the form shows (`Tất cả`):
 `options_json = [{"value": "-1", "label": "Tất cả"}, {"value": "0", "label": "..."}]`, or an
 `options_query` returning two columns, value then label. The label is text for the person
 choosing; do not repeat the value in it.
+
+**A list that depends on another parameter** (a company, then the units of that company): the
+options query of the second parameter uses the first one as a bind, by its name:
+
+```sql
+-- parameter company_id (select):        SELECT CompanyId, CompanyName FROM org.Company
+-- parameter business_unit_id (select):  SELECT BusinessUnitId, BusinessUnitName FROM org.BusinessUnit
+--                                        WHERE CompanyId = :company_id AND LevelNumber = 2
+```
+
+The parameter it uses must come before it (`sort_order`); `report validate` / **Check** says so
+otherwise. On the report page the second list is filled again as soon as the first one changes
+(htmx asks `GET /api/reports/CODE/params/NAME/options`), also along a chain of three or more, and
+what was chosen stays chosen when it is still in the new list. While nothing is chosen in the first
+one the query runs with NULL: `CompanyId = :company_id` then gives an empty list and no error;
+write `(:company_id IS NULL OR CompanyId = :company_id)` to show everything instead. When the
+report runs, a value that is not in the list of the chosen company is refused like any other value
+that is not an option.
 
 `default_value` fills the form when the report is opened. One text column for every type:
 

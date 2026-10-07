@@ -234,6 +234,12 @@ msgstr "Mã"
 msgid "Connect timeout (s)"
 msgstr "Thời gian chờ kết nối (giây)"
 
+msgid "Create BI table"
+msgstr "Tạo bảng BI"
+
+msgid "Open report"
+msgstr "Mở báo cáo"
+
 msgid "Database / service"
 msgstr "Cơ sở dữ liệu / service"
 

@@ -58,6 +58,34 @@ Schema `drs_bi` exists after the first dataset was loaded (`python -m drs cache 
 for a report with `bi_dataset_table`). The connection of step 3.1 then names that server; a
 password with special characters is URL-encoded in the address (`#` is `%23`).
 
+### Superset's own data in a schema of the DRS database
+
+Superset's users, dashboards and charts can live on that server too, in one schema of the DRS
+database, so nothing is kept in the PostgreSQL of this compose file. The owner of the DRS database
+creates the schema and lets the Superset login create its tables there:
+
+```sql
+CREATE SCHEMA superset;
+GRANT USAGE, CREATE ON SCHEMA superset TO <superset login>;
+```
+
+and `docker/.env` names the place (the password is written as it is, special characters included):
+
+```
+SUPERSET_DB_HOST=<server>      SUPERSET_DB_PORT=5432     SUPERSET_DB_NAME=drs
+SUPERSET_DB_USER=<superset login>   SUPERSET_DB_SCHEMA=superset   SUPERSET_DB_PASSWORD=...
+```
+
+Each on its own line. `superset-init` then creates the tables in that schema; start `superset` with
+`--no-deps` when the `postgres` service is not used. To move an installation that already has
+dashboards: stop Superset, copy its database (`CREATE DATABASE superset_move TEMPLATE superset`),
+`ALTER SCHEMA public RENAME TO superset` in the copy, `pg_dump -n superset --no-owner
+--no-privileges --no-comments` it, and run the dump (without its `CREATE SCHEMA` line) on the
+server as the Superset login. `SUPERSET_SECRET_KEY` must stay the same: the stored connection
+passwords are encrypted with it. With the same login as the connection of step 3.1, whoever may
+write SQL on that connection can read Superset's own tables: give SQL Lab to administrators only,
+or use two logins.
+
 ## 2. Point DRS at that PostgreSQL
 
 `config/database.toml`: `active = "postgresql"`, `database = "drs"`, `user = "drs_app"`,
@@ -66,12 +94,23 @@ password with special characters is URL-encoded in the address (`#` is `%23`).
 
 ## 3. In Superset (as admin, http://localhost:8088)
 
+First sign-in: user **admin**, password **admin** (`SUPERSET_ADMIN_USER` / `SUPERSET_ADMIN_PASSWORD`
+in `docker/.env`). Superset then shows only its "Reset Password Form" - every other page leads back
+to it and every API call answers 403 - until another password is saved; after that it works
+normally and `admin` no longer signs in. The check is in `docker/superset/superset_config.py`
+(`FLASK_APP_MUTATOR`): a user whose password is still the initial one must change it. It does not
+concern the viewers of embedded dashboards (guest tokens issued by DRS) nor users without a local
+password. Superset accounts are separate from DRS accounts: only the people who design dashboards
+need one (Settings > List Users); DRS viewers never do.
+
 1. **Database connection** (Settings > Database Connections > + Database > PostgreSQL):
    `postgresql+psycopg2://superset_reader:<SUPERSET_READER_PASSWORD>@postgres:5432/drs`.
    Use this login only - never `drs_app`.
 2. **Datasets**: Datasets > + Dataset > schema `drs_bi` > the table named in
-   `drs_report.bi_dataset_table` of the report. The table exists after the report has run once
-   (open its Dashboard tab, or `python -m drs cache warm --report CODE`).
+   `drs_report.bi_dataset_table` of the report. Create the table from the report's admin page:
+   fill in "BI dataset table", save, then **Create BI table** (the report runs with its default
+   parameters). `python -m drs cache warm --report CODE` does the same from a shell; once the
+   dashboard is registered (step 4), opening the Dashboard tab keeps the table up to date.
 3. **Design the dashboard** with charts on that dataset (drag and drop).
 4. **Guest role**: Settings > List Roles > + `DRS_Embedded` with read access to dashboards and
    charts and `datasource access` on the `drs_bi` datasets used by embedded dashboards. Its name

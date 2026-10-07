@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -15,8 +15,9 @@ from drs.db.models import User
 from drs.settings import get_settings
 from drs.web import views
 from drs.web.deps import client_ip, current_session, current_user, db_session
-from drs.web.i18n import request_locale
+from drs.web.i18n import request_locale, translate
 from drs.web.schemas import MeResponse, MenuResponse, ReportDefinition, RunRequest, RunResponse
+from drs.web.templating import templates
 
 router = APIRouter()
 
@@ -48,6 +49,18 @@ def report_definition(code: str, user: User = Depends(current_user)):
 def report_run(code: str, body: RunRequest, request: Request, user: User = Depends(current_user)):
     return views.run(get_database(), get_settings().app, user.username, code, body.params, body.refresh,
                      client_ip(request), view=body.view)
+
+
+@router.get("/api/reports/{code}/params/{name}/options", response_class=HTMLResponse)
+def report_param_options(code: str, name: str, request: Request, user: User = Depends(current_user)):
+    """The <option> list of a select parameter for the values now on the form (its query string).
+    HTML, not JSON: htmx puts it into the select when a parameter the options depend on changes."""
+    query = request.query_params
+    submitted = {key: query.getlist(key) if len(query.getlist(key)) > 1 else query[key] for key in query.keys()}
+    param, chosen = views.param_options(get_database(), get_settings().app, user.username, code, name, submitted)
+    macro = templates.get_template("_param_options.html").module.option_list
+    return HTMLResponse(str(macro(param, chosen, translate(request_locale(request), "report.any"))),
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/reports/{code}/grid", response_model=RunResponse, response_model_exclude_none=True)

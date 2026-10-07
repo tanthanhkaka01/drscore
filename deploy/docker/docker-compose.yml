@@ -1,0 +1,55 @@
+# DRS and Apache Superset as two containers, on a server whose PostgreSQL already holds the DRS
+# database (schemas drs, drs_bi) and Superset's own data (schema superset). No database runs here.
+# See docs/deployment.md, "Run in containers".
+#
+# The installation folder (this file is its docker-compose.yml):
+#
+#   /opt/drs/
+#     docker-compose.yml   this file
+#     .env                 DRS_DB_PASSWORD, DRS_SECRET_KEY, DRS_SUPERSET_PASSWORD (deploy/drs.env.example),
+#                          and DRS_UID / DRS_GID / *_PORT / *_BIND when not the defaults below
+#     superset.env         the SUPERSET_* values and DRS_PORTAL_ORIGIN of docker/.env.example
+#                          (both files chmod 600: Superset never gets DRS's own passwords)
+#     config/              app.toml, database.toml
+#     designs/             HTML designs
+#     runtime/             logs
+#     src/                 the DRS source the two images are built from
+#
+#   docker compose up -d --build        # first start, and after src/ changed
+#   docker compose restart drs          # after config/ changed
+
+services:
+  drs:
+    build:
+      context: ./src
+      dockerfile: deploy/docker/Dockerfile
+    image: drs:latest
+    container_name: drs
+    restart: unless-stopped
+    # The owner of config/, designs/ and runtime/ on the host: the logs are written as that user.
+    user: "${DRS_UID:-1000}:${DRS_GID:-1000}"
+    environment:
+      DRS_DB_PASSWORD: ${DRS_DB_PASSWORD:?set it in .env}
+      DRS_SECRET_KEY: ${DRS_SECRET_KEY:?set it in .env}
+      DRS_SUPERSET_PASSWORD: ${DRS_SUPERSET_PASSWORD:-}
+    volumes:
+      - ./config:/drs/config:ro
+      - ./designs:/drs/designs:ro
+      - ./runtime:/drs/runtime
+    ports:
+      - "${DRS_BIND:-0.0.0.0}:${DRS_PORT:-8090}:8090"
+
+  # [bi.superset] api_url = "http://superset:8088" reaches it from the drs container.
+  superset:
+    build: ./src/docker/superset
+    image: drs-superset:6.1.0
+    container_name: drs-superset
+    restart: unless-stopped
+    env_file: superset.env
+    environment:
+      SUPERSET_CONFIG_PATH: /app/drs/superset_config.py
+    volumes:
+      - ./src/docker/superset/superset_config.py:/app/drs/superset_config.py:ro
+    ports:
+      # SUPERSET_PORT is also read by the Superset image itself: it must stay a plain number.
+      - "${SUPERSET_BIND:-0.0.0.0}:${SUPERSET_PORT:-8088}:8088"

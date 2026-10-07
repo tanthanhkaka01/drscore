@@ -1,0 +1,14 @@
+# The image takes pyproject.toml and drs/ only (deploy/docker/Dockerfile). Nothing of an
+# installation - configuration, secrets, logs - may reach a build context.
+.git
+.venv
+.env
+*.env
+config/*.toml
+!config/*.example.toml
+docker/.env
+runtime
+tests
+**/__pycache__
+*.egg-info
+*.zip
