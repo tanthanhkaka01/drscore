@@ -93,62 +93,76 @@ def run_query(src: SourceInfo, query_text: str, defs: Sequence[ParamDef], values
 
     timed_out = False
     try:
-        with conn, conn.begin():
+        with conn:
+            transaction = conn.begin()
             raw = conn.connection.dbapi_connection
-            if dialect == "postgresql":
-                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
-                conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(timeout_seconds * 1000)}")
-            elif dialect == "oracle":
-                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
-                raw.call_timeout = int(timeout_seconds * 1000)  # python-oracledb, milliseconds
-            elif dialect == "sqlite":
-                deadline = time.monotonic() + timeout_seconds
+            result = None
+            try:
+                if dialect == "postgresql":
+                    conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+                    conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(timeout_seconds * 1000)}")
+                elif dialect == "oracle":
+                    conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+                    raw.call_timeout = int(timeout_seconds * 1000)  # python-oracledb, milliseconds
+                elif dialect == "sqlite":
+                    deadline = time.monotonic() + timeout_seconds
 
-                def progress() -> int:
-                    nonlocal timed_out
-                    if time.monotonic() > deadline:
-                        timed_out = True
-                        return 1  # interrupts the statement
-                    return 0
+                    def progress() -> int:
+                        nonlocal timed_out
+                        if time.monotonic() > deadline:
+                            timed_out = True
+                            return 1  # interrupts the statement
+                        return 0
 
-                raw.set_progress_handler(progress, 10000)
-            elif dialect == "mssql" and hasattr(raw, "timeout"):
-                raw.timeout = int(timeout_seconds)  # pyodbc query timeout
+                    raw.set_progress_handler(progress, 10000)
+                elif dialect == "mssql" and hasattr(raw, "timeout"):
+                    raw.timeout = int(timeout_seconds)  # pyodbc query timeout
 
-            result = conn.execute(stmt, params)
-            if not result.returns_rows:
-                raise DRSError("SOURCE_QUERY_FAILED", admin_detail="the query returned no result set")
-            names = list(result.keys())
-            description = result.cursor.description if result.cursor is not None else None
-            types: list[str | None] = [
-                normalize.type_from_description(engine.dialect.driver, d[1]) for d in description
-            ] if description else [None] * len(names)
+                result = conn.execute(stmt, params)
+                if not result.returns_rows:
+                    raise DRSError("SOURCE_QUERY_FAILED", admin_detail="the query returned no result set")
+                names = list(result.keys())
+                description = result.cursor.description if result.cursor is not None else None
+                types: list[str | None] = [
+                    normalize.type_from_description(engine.dialect.driver, d[1]) for d in description
+                ] if description else [None] * len(names)
 
-            rows: list[list[Any]] = []
-            byte_size = 2
-            while True:
-                batch = result.fetchmany(FETCH_BATCH)
-                if not batch:
-                    break
-                if len(rows) + len(batch) > max_rows:
-                    raise DRSError("RESULT_TOO_LARGE",
-                                   admin_detail=f"more than {max_rows} rows")
-                if None in types:
-                    types = [t or next((normalize.type_of_value(r[i]) for r in batch if r[i] is not None), None)
-                             for i, t in enumerate(types)]
-                converted = normalize.normalise_rows(batch, tz)
-                byte_size += len(json.dumps(converted, ensure_ascii=False, separators=(",", ":"))
-                                 .encode("utf-8"))
-                if byte_size > max_bytes:
-                    raise DRSError("RESULT_TOO_LARGE",
-                                   admin_detail=f"more than {max_bytes // (1024 * 1024)} MB")
-                rows.extend(converted)
-            if dialect == "sqlite":
-                raw.set_progress_handler(None, 0)
-            elif dialect == "mssql" and hasattr(raw, "timeout"):
-                raw.timeout = 0
-            elif dialect == "oracle":
-                raw.call_timeout = 0
+                rows: list[list[Any]] = []
+                byte_size = 2
+                while True:
+                    batch = result.fetchmany(FETCH_BATCH)
+                    if not batch:
+                        break
+                    if len(rows) + len(batch) > max_rows:
+                        raise DRSError("RESULT_TOO_LARGE",
+                                       admin_detail=f"more than {max_rows} rows")
+                    if None in types:
+                        types = [t or next((normalize.type_of_value(r[i]) for r in batch if r[i] is not None), None)
+                                 for i, t in enumerate(types)]
+                    converted = normalize.normalise_rows(batch, tz)
+                    byte_size += len(json.dumps(converted, ensure_ascii=False, separators=(",", ":"))
+                                     .encode("utf-8"))
+                    if byte_size > max_bytes:
+                        raise DRSError("RESULT_TOO_LARGE",
+                                       admin_detail=f"more than {max_bytes // (1024 * 1024)} MB")
+                    rows.extend(converted)
+            finally:
+                # A report is a read operation. Close the cursor, reset driver state, and roll back
+                # before the pooled connection is returned, on success and on every error path.
+                try:
+                    if result is not None:
+                        result.close()
+                finally:
+                    try:
+                        if dialect == "sqlite":
+                            raw.set_progress_handler(None, 0)
+                        elif dialect == "mssql" and hasattr(raw, "timeout"):
+                            raw.timeout = 0
+                        elif dialect == "oracle":
+                            raw.call_timeout = 0
+                    finally:
+                        if transaction.is_active:
+                            transaction.rollback()
     except DRSError:
         raise
     except DBAPIError as exc:
