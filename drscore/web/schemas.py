@@ -29,6 +29,10 @@ class RunRequest(_Model):
     view: ViewKey | None = None  # the report's default view when not given
 
 
+class BiTokenRequest(_Model):
+    snapshot_id: int | None = None  # the snapshot on screen: the dashboard is shown for it
+
+
 # --------------------------------------------------------------------------------------------
 # Responses
 

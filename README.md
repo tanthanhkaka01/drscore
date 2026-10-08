@@ -98,12 +98,13 @@ Superset dashboard is saved as PDF with Superset's own "Download" menu.
 
 ## BI with Apache Superset
 
-A BI report with `bi_dataset_table` feeds a table (`drs_bi.<name>` on PostgreSQL; table `<name>` of
-the datasets file `runtime/bi/datasets.sqlite3` on SQLite) from its
-result, following its retention; a Superset dashboard designed on that table is shown in the
-Dashboard tab, embedded with a guest token issued by DRS (the user needs no Superset account).
-Setup: `docker/compose.yml` and `docs/superset-setup.md`. Row-level security in the guest token is
-not built yet: a report with row-filter rules cannot be embedded.
+A dashboard is one more view of a report's result, beside the grid and the HTML design. A report
+with `bi_dataset_table` has a dataset - on PostgreSQL a view `drs_bi.<name>` that reads the JSON of
+the report's snapshots as rows and columns, nothing copied; on SQLite a table of the datasets file
+`runtime/bi/datasets.sqlite3` - and a Superset dashboard designed on it is shown in the Dashboard
+tab for the parameters the user chose: the guest token DRS issues opens that one result (the user
+needs no Superset account), so two users with different parameters see different data at the same
+moment. Setup: `docs/superset-setup.md`. A report with row-filter rules cannot be embedded.
 
 ## Administration
 

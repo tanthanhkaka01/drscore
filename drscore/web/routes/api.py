@@ -16,7 +16,14 @@ from drscore.settings import get_settings
 from drscore.web import views
 from drscore.web.deps import client_ip, current_session, current_user, db_session
 from drscore.web.i18n import request_locale, translate
-from drscore.web.schemas import MeResponse, MenuResponse, ReportDefinition, RunRequest, RunResponse
+from drscore.web.schemas import (
+    BiTokenRequest,
+    MeResponse,
+    MenuResponse,
+    ReportDefinition,
+    RunRequest,
+    RunResponse,
+)
 from drscore.web.templating import templates
 
 router = APIRouter()
@@ -71,9 +78,12 @@ def report_grid(code: str, request: Request, snapshot_id: int = Query(...), user
 
 
 @router.post("/api/reports/{code}/bi-token")
-def report_bi_token(code: str, request: Request, user: User = Depends(current_user)) -> dict:
-    """Guest token for the embedded dashboard (asked by the Superset embedded SDK)."""
-    return {"token": views.bi_token(get_database(), get_settings().app, user.username, code, client_ip(request))}
+def report_bi_token(code: str, request: Request, body: BiTokenRequest | None = None,
+                    user: User = Depends(current_user)) -> dict:
+    """Guest token for the embedded dashboard (asked by the Superset embedded SDK), for the snapshot
+    on the user's screen when the dashboard reads the report's dataset."""
+    return {"token": views.bi_token(get_database(), get_settings().app, user.username, code, client_ip(request),
+                                    snapshot_id=body.snapshot_id if body else None)}
 
 
 @router.get("/api/reports/{code}/export")

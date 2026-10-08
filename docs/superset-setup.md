@@ -128,11 +128,11 @@ need one (Settings > List Users); DRS viewers never do.
 1. **Database connection** (Settings > Database Connections > + Database > PostgreSQL):
    `postgresql+psycopg2://superset_reader:<SUPERSET_READER_PASSWORD>@postgres:5432/drs`.
    Use this login only - never `drs_app`.
-2. **Datasets**: Datasets > + Dataset > schema `drs_bi` > the table named in
-   `drs_report.bi_dataset_table` of the report. Create the table from the report's admin page:
-   fill in "BI dataset table", save, then **Create BI table** (the report runs with its default
-   parameters). `python -m drscore cache warm --report CODE` does the same from a shell; once the
-   dashboard is registered (step 4), opening the Dashboard tab keeps the table up to date.
+2. **Datasets**: Datasets > + Dataset > schema `drs_bi` > the name in "BI dataset table" of the
+   report. It exists from the first run of the report on: open the report, choose its parameters,
+   run it - or **Create BI table** on its admin page, or `python -m drscore cache warm --report
+   CODE`, which run it with the default parameters. See "What a dataset is" below: it is the
+   report's result, not a copy of one run, and it has one column of its own, `drs_snapshot_id`.
 3. **Design the dashboard** with charts on that dataset (drag and drop).
 4. **Guest role**: Settings > List Roles > + `DRS_Embedded` with read access to dashboards and
    charts and `datasource access` on the `drs_bi` datasets used by embedded dashboards. Its name
@@ -177,12 +177,34 @@ that one dashboard (`POST /api/reports/{code}/bi-token`, logged as `BI_TOKEN`).
 tab" button. The user signs in to the BI tool; permissions on the data are the tool's own. A report
 with row-filter rules cannot use link mode.
 
-## Keeping the data fresh
+## What a dataset is
 
-The dataset table is rewritten from the report's snapshot, following the report's retention
-(`cache_ttl_seconds`): when someone opens the Dashboard tab after the retention, or when
-`python -m drscore cache warm` runs (schedule it to keep dashboards fresh without anyone opening
-them). The table is replaced in one transaction, so Superset never sees it empty.
+A dashboard is one more view of a report's result, beside the grid and the HTML design: it shows
+the result **for the parameters the user chose**, and it changes when they choose others and run
+again. Two users with different parameters see different data in the same dashboard at the same
+moment.
+
+DRS keeps every run of a report as a snapshot - the JSON of its rows, for one set of parameter
+values, for the report's retention. The dataset is that JSON read as rows and columns:
+
+- **PostgreSQL**: `drs_bi.<name>` is a **view** over `drs_report_snapshot` - SQL that unpacks the
+  JSON into typed columns (`pg_get_viewdef('drs_bi.<name>')` shows it). Nothing is copied, nothing
+  has to be refreshed, and a snapshot leaves the dataset when it leaves the cache. DRS creates the
+  view, and replaces it when the report's columns change.
+- **SQLite**: a BI tool is never given the DRS database file, so the snapshots that are asked for
+  are written to the table `<name>` of `runtime/bi/datasets.sqlite3`, and leave it with their
+  snapshot.
+
+Both have the column `drs_snapshot_id`. When a user opens the Dashboard tab, DRS asks Superset for
+a guest token that carries the row-level rule `drs_snapshot_id = <the snapshot on their screen>` -
+Superset's own mechanism for embedded dashboards - so the charts read that one result. The rule
+applies to every dataset of the dashboard: build a report's dashboard on that report's dataset.
+
+In Superset itself, outside DRS, no such rule applies: the dataset shows every result of the report
+that is in the cache at that moment. While designing, keep one (`python -m drscore cache clear
+--report CODE`, then run the report once), or filter on `drs_snapshot_id` without saving that filter
+into the chart. A filter saved inside a dashboard (Superset's own filter bar) keeps working: it
+narrows what the user's parameters returned.
 
 Superset can also save a dashboard as PDF or image (Download menu).
 

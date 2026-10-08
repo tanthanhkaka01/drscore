@@ -6,6 +6,7 @@ translate HTTP to these calls.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,7 +19,7 @@ from drscore.audit import log_access
 from drscore.authz.permissions import Access, require_report
 from drscore.authz.rowfilter import filter_rows, user_attributes
 from drscore.db.engine import Database
-from drscore.db.models import Report, User
+from drscore.db.models import Report, ReportSnapshot, User
 from drscore.db.types import utcnow
 from drscore.errors import DRSError
 from drscore.export import writers
@@ -41,6 +42,8 @@ from drscore.web.schemas import (
     SnapshotInfo,
     ViewInfo,
 )
+
+log = logging.getLogger(__name__)
 
 EXPORT_MEDIA = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -95,7 +98,8 @@ def view_states(session, report: Report, user: User, settings: AppSettings) -> l
     for key in design.available_views(report):
         try:
             d = design.check(session, report, settings, key)
-            states.append(ViewInfo(key=key, ok=True, bi=bi_payload(d, settings) if key == "bi" else None))
+            states.append(ViewInfo(key=key, ok=True,
+                                   bi=bi_payload(d, settings, bool(report.bi_dataset_table)) if key == "bi" else None))
         except DRSError as exc:
             states.append(ViewInfo(key=key, ok=False, error=ErrorBody(
                 code=exc.code, message=exc.message, detail=exc.admin_detail if user.is_admin else None)))
@@ -171,10 +175,13 @@ def html_url(code: str, snapshot_id: int) -> str:
     return f"/reports/{code}/html?snapshot_id={snapshot_id}"
 
 
-def bi_payload(d: design.Design, settings: AppSettings) -> dict[str, Any]:
+def bi_payload(d: design.Design, settings: AppSettings, follows_report: bool) -> dict[str, Any]:
+    """``follows_report``: the dashboard reads the report's dataset, so it is shown for the snapshot
+    on screen - the result for the parameters the user chose - like the grid and the HTML design."""
     if d.kind == "bi_link":
-        return {"mode": "LINK", "url": d.url}
-    return {"mode": "EMBED", "superset_url": settings.bi.superset.base_url, "dashboard_id": d.dashboard_id}
+        return {"mode": "LINK", "url": d.url, "follows_report": False}
+    return {"mode": "EMBED", "superset_url": settings.bi.superset.base_url, "dashboard_id": d.dashboard_id,
+            "follows_report": follows_report}
 
 
 def open_design(database: Database, settings: AppSettings, username: str, code: str,
@@ -194,9 +201,10 @@ def run(database: Database, settings: AppSettings, username: str, code: str, par
         chosen = design.require_view(report, view)
         info = report_info(report)
     if chosen == "bi":
-        return bi_answer(database, settings, username, code, info, client_ip)
+        return bi_answer(database, settings, username, code, info, client_ip, params, refresh)
     served = run_for_user(database, settings, username, code, params, refresh=refresh, client_ip=client_ip,
                           view=chosen)
+    _dataset_of(database, code, served.outcome)
     if chosen == "grid":
         with database.session() as s:
             report = s.scalars(select(Report).where(Report.report_code == code)).one()
@@ -204,6 +212,20 @@ def run(database: Database, settings: AppSettings, username: str, code: str, par
     o = served.outcome
     return RunResponse(report=info, snapshot=_snapshot_info(o, settings), view="html", params=o.params,
                        row_count=len(served.rows), html_url=html_url(code, o.snapshot_id))
+
+
+def _dataset_of(database: Database, code: str, outcome) -> None:
+    """A report that names a BI dataset has it from its first run on: a dashboard is designed on the
+    dataset before the report has a Dashboard tab. Never the reason a grid is not shown."""
+    with database.session() as s:
+        report = s.scalars(select(Report).where(Report.report_code == code)).one()
+        report_id, table = report.report_id, report.bi_dataset_table
+    if not table:
+        return
+    try:
+        bi_dataset.refresh(database, report_id, table, outcome)
+    except DRSError as exc:
+        log.warning("dataset %s of %s: %s: %s", table, code, exc.code, exc.admin_detail or exc.message)
 
 
 @dataclass
@@ -217,6 +239,15 @@ class _Stored:
     params: dict
     cache_hit: bool = True
     is_stale: bool = False
+
+
+@dataclass
+class _Rows:
+    """A stored snapshot as the dataset needs it."""
+
+    snapshot_id: int
+    columns: list
+    rows: list
 
 
 def grid_of_snapshot(database: Database, settings: AppSettings, username: str, code: str, snapshot_id: int,
@@ -245,10 +276,10 @@ def grid_of_snapshot(database: Database, settings: AppSettings, username: str, c
 
 
 def bi_answer(database: Database, settings: AppSettings, username: str, code: str, info: ReportInfo,
-              client_ip: str | None) -> RunResponse:
-    """The dashboard view. A report with ``bi_dataset_table`` first brings its dataset up to date
-    (spec 14.3 step 5): the report runs (or reads its snapshot, by retention) and the snapshot is
-    loaded into the table the dashboard reads."""
+              client_ip: str | None, params: dict[str, Any] | None = None, refresh: bool = False) -> RunResponse:
+    """A run asked for the dashboard view (a report whose only view it is). With ``bi_dataset_table``
+    the report runs - or reads its snapshot, by retention - for the parameters given, exactly as
+    for the grid, and that snapshot is what the dashboard is then shown for (``bi_token``)."""
     try:
         d = open_design(database, settings, username, code, "bi")
         with database.session() as s:
@@ -261,21 +292,25 @@ def bi_answer(database: Database, settings: AppSettings, username: str, code: st
                    error_code=exc.code, error_message=exc.admin_detail or exc.message, client_ip=client_ip,
                    view_key="bi")
         raise
-    payload = bi_payload(d, settings)
+    payload = bi_payload(d, settings, bool(table))
     if not table:
         log_access(username, "VIEW", "OK", report_code=code, client_ip=client_ip, view_key="bi")
         return RunResponse(report=info, view="bi", params={}, row_count=0, bi=payload)
-    served = run_for_user(database, settings, username, code, {}, client_ip=client_ip, view="bi")
+    served = run_for_user(database, settings, username, code, params or {}, refresh=refresh, client_ip=client_ip,
+                          view="bi")
     bi_dataset.refresh(database, report_id, table, served.outcome)
     payload["dataset"] = bi_dataset.display_name(database, table)
     return RunResponse(report=info, snapshot=_snapshot_info(served.outcome, settings), view="bi",
                        params=served.outcome.params, row_count=len(served.outcome.rows), bi=payload)
 
 
-def bi_token(database: Database, settings: AppSettings, username: str, code: str, client_ip: str | None) -> str:
+def bi_token(database: Database, settings: AppSettings, username: str, code: str, client_ip: str | None,
+             snapshot_id: int | None = None) -> str:
     """A guest token for the embedded dashboard of a report (spec 14.4 step 5), limited to that one
-    dashboard. Row-level security is not built yet: a report with row-filter rules never gets
-    here (design check)."""
+    dashboard - and, for a report with ``bi_dataset_table``, to one snapshot of it: the result on
+    the user's screen. The token carries Superset's row-level rule ``drs_snapshot_id = <snapshot>``,
+    so two users who chose different parameters read different data through the same dataset.
+    A report with row-filter rules never gets here (design check)."""
     try:
         with database.session() as s:
             user = _user(s, username)
@@ -284,7 +319,18 @@ def bi_token(database: Database, settings: AppSettings, username: str, code: str
             if d.kind != "bi_embed":
                 raise DRSError("VIEW_NOT_AVAILABLE", admin_detail="the dashboard is not in embedded mode")
             who = {"username": user.username, "first_name": user.display_name, "last_name": ""}
-        token = superset.client(settings.bi.superset).guest_token(d.dashboard_id, who, rls=[])
+            report_id, table, snapshot = report.report_id, report.bi_dataset_table, None
+            if table:
+                # Of this report, and still in the cache: the dataset holds nothing else.
+                snap = s.get(ReportSnapshot, snapshot_id) if snapshot_id is not None else None
+                if snap is None or snap.report_id != report_id:
+                    raise DRSError("SNAPSHOT_GONE")
+                snapshot = _Rows(snap.snapshot_id, snap.columns_json, snap.rows_json)
+        rls = []
+        if snapshot is not None:
+            bi_dataset.refresh(database, report_id, table, snapshot)
+            rls = [{"clause": bi_dataset.rls_clause(snapshot.snapshot_id)}]
+        token = superset.client(settings.bi.superset).guest_token(d.dashboard_id, who, rls=rls)
     except DRSError as exc:
         log_access(username, "BI_TOKEN", "DENIED" if exc.code == "FORBIDDEN" else "ERROR", report_code=code,
                    error_code=exc.code, error_message=exc.admin_detail or exc.message, client_ip=client_ip,

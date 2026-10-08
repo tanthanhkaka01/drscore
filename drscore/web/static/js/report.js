@@ -18,7 +18,8 @@
   var gridOf = null;       // the snapshot the grid shows
   var htmlOf = null;       // the snapshot the HTML frame shows
   var current = def.default_view;
-  var biShown = false;     // the dashboard is loaded once per page
+  var biOf = null;         // the snapshot the embedded dashboard shows (0: one that follows no snapshot)
+  var biLinked = false;    // a linked dashboard is loaded once per page
 
   function t(key, values) {
     var text = msg[key] || key;
@@ -28,10 +29,11 @@
   function el(id) { return document.getElementById(id); }
   function show(node, on) { if (node) node.classList.toggle("d-none", !on); }
   function usable(key) { return views[key] && views[key].ok; }
-  // The view a run is made for: the current tab if it shows data, else the first one that does.
+  // The view a run is made for: the current tab if it shows data, else the first one that does -
+  // the dashboard itself for a report that has no other view and whose dashboard reads its dataset.
   function dataView() {
     if (current !== "bi" && usable(current)) return current;
-    return ["grid", "html"].filter(usable)[0] || null;
+    return ["grid", "html"].filter(usable)[0] || (usable("bi") && views.bi.bi && views.bi.bi.follows_report ? "bi" : null);
   }
 
   // ---------------------------------------------------------------- parameters
@@ -223,46 +225,55 @@
     show(stale, s.is_stale);
   }
 
-  // The dashboard tab: the server first brings the dashboard's dataset up to date, then the
-  // dashboard is shown - a linked page, or embedded through the Superset SDK with a guest token.
+  // The dashboard reads the report's dataset: it is then one more view of the snapshot on screen.
+  function followsReport() { return !!(views.bi && views.bi.bi && views.bi.bi.follows_report); }
+
+  // The dashboard tab. A linked dashboard is another site's page, loaded once. An embedded one is
+  // drawn by the Superset SDK with a guest token from DRS. When it reads the report's dataset it
+  // shows the snapshot on screen - the same result as the grid, for the parameters chosen - and is
+  // drawn again when that snapshot changes: a guest token opens one snapshot and no other, which is
+  // how two users with different parameters see different data in the same dashboard.
   function showDashboard() {
-    if (biShown || !usable("bi")) return;
-    biShown = true;
-    setBusy(true);
-    api("POST", "/api/reports/" + encodeURIComponent(code) + "/run", { params: {}, view: "bi" }).then(function (r) {
-      setBusy(false);
-      if (!r) return;
-      if (!r.ok) { biShown = false; showError(r.body.error || { code: "ERROR" }); return; }
-      if (r.body.snapshot) showMeta(r.body);
-      var frame = el("bi-frame");
-      if (frame) frame.src = frame.getAttribute("data-src");
-      var mount = el("bi-embed");
-      if (mount && window.supersetEmbeddedSdk) {
-        window.supersetEmbeddedSdk.embedDashboard({
-          id: mount.getAttribute("data-dashboard"),
-          supersetDomain: mount.getAttribute("data-superset"),
-          mountPoint: mount,
-          fetchGuestToken: function () {
-            return api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-token").then(function (t) {
-              if (!t || !t.ok) throw new Error((t && t.body.error && t.body.error.code) || "BI_TOKEN");
-              return t.body.token;
-            });
-          },
-          // The title bar stays: its menu is where Superset keeps "Download" (PDF, image), and a
-          // dashboard is printed and exported with Superset's own tools (decision 48). With the
-          // bar hidden the Dashboard tab had no way at all to print or save what it showed.
-          dashboardUiConfig: { hideTitle: false, filters: { expanded: true } },
-          // Superset shows an embedded dashboard only to a page of its "allowed domains", which it
-          // reads from the Referer. The portal's own policy (same-origin) sends none to another
-          // origin, and Superset answered 403: this frame alone tells it the portal's origin.
-          referrerPolicy: "strict-origin",
+    if (!usable("bi")) return;
+    var frame = el("bi-frame");
+    if (frame) {
+      if (!biLinked) { frame.src = frame.getAttribute("data-src"); biLinked = true; }
+      return;
+    }
+    var mount = el("bi-embed");
+    if (!mount || !window.supersetEmbeddedSdk) return;
+    var follows = followsReport();
+    if (follows && !snapshotId) return;   // nothing was run yet: the "choose and run" hint is on screen
+    var shown = follows ? snapshotId : 0;
+    if (biOf === shown) return;
+    biOf = shown;
+    mount.textContent = "";
+    window.supersetEmbeddedSdk.embedDashboard({
+      id: mount.getAttribute("data-dashboard"),
+      supersetDomain: mount.getAttribute("data-superset"),
+      mountPoint: mount,
+      fetchGuestToken: function () {
+        return api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-token",
+                   { snapshot_id: follows ? shown : null }).then(function (r) {
+          if (!r || !r.ok) {
+            var error = (r && r.body.error) || { code: "BI_ENGINE_UNAVAILABLE", message: t("error.BI_ENGINE_UNAVAILABLE") };
+            if (biOf === shown) { biOf = null; showError(error); }
+            throw new Error(error.code);
+          }
+          return r.body.token;
+        }, function (error) {
+          if (biOf === shown) { biOf = null; showError(clientFailure(error)); }
+          throw error;
         });
-      }
-    }).catch(function (error) {
-      if (window.console) console.error(error);
-      setBusy(false);
-      biShown = false;
-      showError({ code: "BI_ENGINE_UNAVAILABLE", message: t("error.BI_ENGINE_UNAVAILABLE") });
+      },
+      // The title bar stays: its menu is where Superset keeps "Download" (PDF, image), and a
+      // dashboard is printed and exported with Superset's own tools (decision 48). With the
+      // bar hidden the Dashboard tab had no way at all to print or save what it showed.
+      dashboardUiConfig: { hideTitle: false, filters: { expanded: true } },
+      // Superset shows an embedded dashboard only to a page of its "allowed domains", which it
+      // reads from the Referer. The portal's own policy (same-origin) sends none to another
+      // origin, and Superset answered 403: this frame alone tells it the portal's origin.
+      referrerPolicy: "strict-origin",
     });
   }
 
@@ -286,7 +297,7 @@
     });
     document.querySelectorAll("[data-pane]").forEach(function (p) { show(p, p.getAttribute("data-pane") === key); });
     document.querySelectorAll("[data-for-view]").forEach(function (b) { show(b, b.getAttribute("data-for-view") === key); });
-    show(el("waiting"), !snapshotId && key !== "bi" && usable(key));
+    show(el("waiting"), !snapshotId && usable(key) && (key !== "bi" || followsReport()));
     // Only a built table is redrawn (one drawn while its tab was hidden). Redrawing the table of
     // the run that has just answered threw inside Tabulator, and every report showed an error
     // above its own rows.
@@ -338,8 +349,9 @@
           }
           return;
         }
+        if (!result.body.snapshot) { activate(current); return; }
         snapshotId = result.body.snapshot.id;
-        gridOf = htmlOf = null;
+        gridOf = htmlOf = null;   // the dashboard notices the new snapshot by itself (biOf)
         showMeta(result.body);
         if (result.body.columns) renderGrid(result.body);
         setExports();
