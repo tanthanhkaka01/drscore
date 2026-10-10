@@ -1,0 +1,798 @@
+{% extends "base.html" %}
+{% block title %}{{ t('design.editor_title') }}{% endblock %}
+
+{% block header %}
+<div class="page-pretitle">{{ t('design.title') }}</div>
+<h2 class="page-title">
+  {% if is_new %}
+  {{ t('design.new_report') }}
+  {% else %}
+  <code>{{ code }}</code> · {{ content.report_name }}
+  {% endif %}
+</h2>
+{% endblock %}
+
+{% block header_actions %}
+<div class="btn-list">
+  {% if not is_new and draft %}
+    {% if draft.status == 'DRAFT' %}
+    <span class="badge bg-secondary me-2 fs-3">{{ t('design.status_DRAFT') }}</span>
+    {% elif draft.status == 'PENDING' %}
+    <span class="badge bg-warning me-2 fs-3">{{ t('design.status_PENDING') }}</span>
+    {% elif draft.status == 'APPROVED' %}
+    <span class="badge bg-success me-2 fs-3">{{ t('design.status_APPROVED') }}</span>
+    {% elif draft.status == 'REJECTED' %}
+    <span class="badge bg-danger me-2 fs-3">{{ t('design.status_REJECTED') }}</span>
+    {% endif %}
+
+    {% if auth and draft.author == auth.username and draft.status == 'PENDING' %}
+    <form method="post" action="/design/drafts/{{ draft.draft_id }}/withdraw" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+      <button type="submit" class="btn btn-outline-warning">
+        <i class="ti ti-arrow-back me-1"></i>{{ t('design.withdraw') }}
+      </button>
+    </form>
+    {% endif %}
+
+    {% if auth and ((auth.is_admin and draft.status != 'APPROVED') or (draft.author == auth.username and draft.status in ('DRAFT', 'REJECTED'))) %}
+    <form method="post" action="/design/drafts/{{ draft.draft_id }}/delete" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+      <button type="submit" class="btn btn-outline-danger">
+        <i class="ti ti-trash me-1"></i>{{ t('design.delete') }}
+      </button>
+    </form>
+    {% endif %}
+  {% endif %}
+
+  <a href="/design" class="btn btn-outline-secondary">
+    <i class="ti ti-arrow-left me-1"></i>{{ t('design.back_to_list') }}
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if msg %}
+<div class="alert alert-success alert-dismissible mb-3" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-check me-2"></i></div>
+    <div>{{ t('design.msg_' ~ msg) }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if not is_new and draft and draft.status == 'REJECTED' and draft.review_note %}
+<div class="alert alert-danger mb-3" role="alert">
+  <h4 class="alert-title">
+    <i class="ti ti-alert-triangle me-1"></i>{{ t('design.rejected_note_title') }} ({{ draft.reviewed_by }}):
+  </h4>
+  <p class="mb-0">{{ draft.review_note }}</p>
+</div>
+{% endif %}
+
+{% if not is_new and draft and draft.test_summary %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.last_test_title') }}</h3>
+  </div>
+  <div class="card-body">
+    {% if draft.test_summary.ok %}
+    <div class="text-success">
+      <i class="ti ti-check me-1"></i>{{ t('design.test_passed_at', at=draft.test_summary.at, ms=draft.test_summary.duration_ms, count=draft.test_summary.row_count) }}
+    </div>
+    {% else %}
+    <div class="text-danger">
+      <i class="ti ti-x me-1"></i>{{ t('design.test_failed_at', at=draft.test_summary.at, code=draft.test_summary.error_code, err=draft.test_summary.error) }}
+    </div>
+    {% endif %}
+    {% if not is_tested and draft.status in ('DRAFT', 'REJECTED') %}
+    <div class="text-warning mt-2">
+      <i class="ti ti-alert-circle me-1"></i>{{ t('design.test_needed_hint') }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if diff and auth and auth.is_admin and draft and draft.status == 'PENDING' %}
+<div class="card mb-3 border-warning">
+  <div class="card-header bg-warning-lt">
+    <h3 class="card-title"><i class="ti ti-checklist me-2"></i>{{ t('design.review_panel') }}</h3>
+  </div>
+  <div class="card-body">
+    {% if diff.fields %}
+    <h4 class="mb-2">{{ t('design.fields_changed') }}</h4>
+    <div class="table-responsive mb-3">
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            <th>{{ t('design.field_name') }}</th>
+            <th>{{ t('design.diff_live') }}</th>
+            <th>{{ t('design.diff_proposed') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fname, (old_v, new_v) in diff.fields.items() %}
+          <tr>
+            <td><strong>{{ fname }}</strong></td>
+            <td>{{ old_v if old_v is not none else '—' }}</td>
+            <td class="text-primary font-weight-bold">{{ new_v if new_v is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if diff.params.added or diff.params.removed or diff.params.changed %}
+    <div class="mb-3">
+      <strong>{{ t('design.params') }}:</strong>
+      {% if diff.params.added %}<span class="badge bg-green me-1">+ {{ diff.params.added|join(', ') }}</span>{% endif %}
+      {% if diff.params.removed %}<span class="badge bg-red me-1">- {{ diff.params.removed|join(', ') }}</span>{% endif %}
+      {% if diff.params.changed %}<span class="badge bg-blue me-1">~ {{ diff.params.changed|join(', ') }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if diff.columns.added or diff.columns.removed or diff.columns.changed %}
+    <div class="mb-3">
+      <strong>{{ t('design.columns') }}:</strong>
+      {% if diff.columns.added %}<span class="badge bg-green me-1">+ {{ diff.columns.added|join(', ') }}</span>{% endif %}
+      {% if diff.columns.removed %}<span class="badge bg-red me-1">- {{ diff.columns.removed|join(', ') }}</span>{% endif %}
+      {% if diff.columns.changed %}<span class="badge bg-blue me-1">~ {{ diff.columns.changed|join(', ') }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="mb-3">
+      <label class="form-label"><strong>{{ t('design.query_diff') }}</strong></label>
+      <pre class="bg-dark text-light p-3 rounded font-monospace" style="max-height: 250px; overflow-y: auto;">{% for line in diff.query_diff %}{{ line }}{% else %}{{ t('design.no_diff') }}{% endfor %}</pre>
+    </div>
+
+    <div class="row g-3 mt-2">
+      <div class="col-md-6">
+        <div class="card card-body bg-light border-success">
+          <h4>{{ t('design.approve') }}</h4>
+          <form method="post" action="/design/drafts/{{ draft.draft_id }}/approve">
+            <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+            <div class="mb-3">
+              <label class="form-label">{{ t('design.review_note_optional') }}</label>
+              <input type="text" class="form-control" name="note" placeholder="...">
+            </div>
+            <button type="submit" class="btn btn-success">
+              <i class="ti ti-check me-1"></i>{{ t('design.approve') }}
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card card-body bg-light border-danger">
+          <h4>{{ t('design.reject') }}</h4>
+          <form method="post" action="/design/drafts/{{ draft.draft_id }}/reject">
+            <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+            <div class="mb-3">
+              <label class="form-label">{{ t('design.review_note_required') }}</label>
+              <textarea class="form-control" name="note" required rows="2" placeholder="..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-danger">
+              <i class="ti ti-x me-1"></i>{{ t('design.reject') }}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if test_result %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.test_query') }}</h3>
+  </div>
+  <div class="card-body">
+    {% if test_result.ok %}
+    <div class="alert alert-success mb-3">
+      <h4 class="alert-title">{{ t('design.test_success') }}</h4>
+      <div class="text-secondary">{{ t('design.test_summary_text', count=test_result.row_count, ms=test_result.duration_ms) }}</div>
+    </div>
+    {% if test_result.columns %}
+    <div class="table-responsive border rounded" style="max-height: 400px; overflow-y: auto;">
+      <table class="table table-vcenter table-sm table-striped">
+        <thead>
+          <tr>
+            {% for col in test_result.columns %}
+            <th>{{ col.name }} <small class="text-secondary">({{ col.type }})</small></th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in test_result.rows %}
+          <tr>
+            {% for val in row %}
+            <td>{{ val }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ test_result.columns|length }}" class="text-secondary text-center">{{ t('report.no_rows') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="alert alert-danger mb-0">
+      <h4 class="alert-title">{{ t('design.test_failed') }}</h4>
+      <p class="mb-0"><strong>{{ test_result.error_code }}</strong>: {{ test_result.error }}</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="alert alert-danger mb-3" role="alert">
+  <h4 class="alert-title">{{ t('design.validation_errors') }}</h4>
+  <ul class="mb-0">
+    {% for k, v in errors.items() %}
+    <li><strong>{{ k }}</strong>: {{ v }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if is_editor %}
+<form id="editor-form" method="post" action="{% if is_new %}/design/new{% else %}/design/drafts/{{ draft.draft_id }}{% endif %}">
+  <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <h3 class="card-title">{{ t('design.editor_title') }}</h3>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label" for="report_code">{{ t('design.report_code') }}</label>
+          {% if not is_new and draft and draft.report_id is not none %}
+          <input type="text" class="form-control font-monospace" id="report_code" name="report_code" value="{{ code }}" readonly>
+          {% else %}
+          <input type="text" class="form-control font-monospace" id="report_code" name="report_code" value="{{ code }}" required pattern="^[A-Z][A-Z0-9_]{1,49}$">
+          {% endif %}
+          {% if errors.report_code %}
+          <div class="invalid-feedback d-block">{{ errors.report_code }}</div>
+          {% endif %}
+        </div>
+
+        <div class="col-md-5">
+          <label class="form-label" for="report_name">{{ t('design.report_name') }}</label>
+          <input type="text" class="form-control" id="report_name" name="report_name" value="{{ content.report_name }}" required maxlength="200">
+          {% if errors.report_name %}
+          <div class="invalid-feedback d-block">{{ errors.report_name }}</div>
+          {% endif %}
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label" for="cache_ttl_seconds">{{ t('design.cache_ttl') }}</label>
+          <input type="number" class="form-control" id="cache_ttl_seconds" name="cache_ttl_seconds" value="{{ content.cache_ttl_seconds or 0 }}" min="0">
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label" for="group">{{ t('design.group') }}</label>
+          <select class="form-select" id="group" name="group" required>
+            {% for g in groups %}
+            <option value="{{ g.group_code }}" {% if content.group == g.group_code %}selected{% endif %}>
+              {{ g.group_code }} — {{ g.group_name }}
+            </option>
+            {% endfor %}
+          </select>
+          {% if errors.group %}
+          <div class="invalid-feedback d-block">{{ errors.group }}</div>
+          {% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label" for="datasource">{{ t('design.datasource') }}</label>
+          <select class="form-select" id="datasource" name="datasource" required>
+            {% for ds in datasources %}
+            <option value="{{ ds.datasource_code }}" {% if content.datasource == ds.datasource_code %}selected{% endif %}>
+              {{ ds.datasource_code }} — {{ ds.datasource_name }}
+            </option>
+            {% endfor %}
+          </select>
+          {% if errors.datasource %}
+          <div class="invalid-feedback d-block">{{ errors.datasource }}</div>
+          {% endif %}
+        </div>
+
+        <div class="col-12">
+          <label class="form-label" for="description">{{ t('design.description') }}</label>
+          <textarea class="form-control" id="description" name="description" rows="2" maxlength="2000">{{ content.description or '' }}</textarea>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label" for="query_text">{{ t('design.query_text') }}</label>
+          <textarea class="form-control font-monospace" id="query_text" name="query_text" rows="14" required>{{ content.query_text or '' }}</textarea>
+          {% if errors.query_text %}
+          <div class="invalid-feedback d-block">{{ errors.query_text }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h3 class="card-title">{{ t('design.params') }}</h3>
+      <button type="button" id="btn-add-param" class="btn btn-sm btn-outline-primary">
+        <i class="ti ti-plus me-1"></i>{{ t('design.add_param') }}
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table table-sm">
+        <thead>
+          <tr>
+            <th class="w-1">{{ t('design.is_active') }}</th>
+            <th>{{ t('design.param_name') }}</th>
+            <th>{{ t('design.label') }}</th>
+            <th>{{ t('design.type') }}</th>
+            <th>{{ t('design.input_kind') }}</th>
+            <th class="w-1">{{ t('design.is_required') }}</th>
+            <th>{{ t('design.default_value') }}</th>
+            <th>{{ t('design.options_query') }}</th>
+            <th>{{ t('design.options_datasource') }}</th>
+            <th title="{{ t('design.advanced_hint') }}">{{ t('design.advanced') }}</th>
+            <th class="w-1"></th>
+          </tr>
+        </thead>
+        <tbody id="params-table-body">
+          {% for p in content.params %}
+          <tr>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="params-{{ loop.index0 }}-is_active" {% if p.get('is_active', True) %}checked{% endif %}>
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm font-monospace" name="params-{{ loop.index0 }}-param_name" value="{{ p.param_name }}">
+              {% if errors['params.' ~ loop.index0 ~ '.param_name'] %}
+              <div class="invalid-feedback d-block">{{ errors['params.' ~ loop.index0 ~ '.param_name'] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm" name="params-{{ loop.index0 }}-label" value="{{ p.label }}">
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="params-{{ loop.index0 }}-data_type">
+                {% for dt in ['text', 'int', 'decimal', 'date', 'datetime', 'bool'] %}
+                <option value="{{ dt }}" {% if p.data_type == dt %}selected{% endif %}>{{ dt }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="params-{{ loop.index0 }}-input_kind">
+                {% for ik in ['input', 'select', 'multiselect'] %}
+                <option value="{{ ik }}" {% if p.input_kind == ik %}selected{% endif %}>{{ ik }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="params-{{ loop.index0 }}-is_required" {% if p.get('is_required', True) %}checked{% endif %}>
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm" name="params-{{ loop.index0 }}-default_value" value="{{ p.default_value or '' }}">
+              {% if errors['params.' ~ loop.index0 ~ '.default_value'] %}
+              <div class="invalid-feedback d-block">{{ errors['params.' ~ loop.index0 ~ '.default_value'] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm font-monospace" name="params-{{ loop.index0 }}-options_query" value="{{ p.options_query or '' }}">
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="params-{{ loop.index0 }}-options_datasource">
+                <option value="">{{ t('design.default_datasource') }}</option>
+                {% for ds in datasources %}
+                <option value="{{ ds.datasource_code }}" {% if p.options_datasource == ds.datasource_code %}selected{% endif %}>{{ ds.datasource_code }} — {{ ds.datasource_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm font-monospace" name="params-{{ loop.index0 }}-advanced"
+                     value="{{ advanced(p) }}" title="{{ t('design.advanced_hint') }}">
+              {% if errors['params.' ~ loop.index0 ~ '.advanced'] %}
+              <div class="invalid-feedback d-block">{{ errors['params.' ~ loop.index0 ~ '.advanced'] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <button type="button" class="btn btn-sm btn-ghost-danger btn-remove-param">
+                <i class="ti ti-trash"></i>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <template id="param-row-template">
+    <tr>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="params-__INDEX__-is_active" checked>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace" name="params-__INDEX__-param_name" value="">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm" name="params-__INDEX__-label" value="">
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="params-__INDEX__-data_type">
+          {% for dt in ['text', 'int', 'decimal', 'date', 'datetime', 'bool'] %}
+          <option value="{{ dt }}">{{ dt }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="params-__INDEX__-input_kind">
+          {% for ik in ['input', 'select', 'multiselect'] %}
+          <option value="{{ ik }}">{{ ik }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="params-__INDEX__-is_required" checked>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm" name="params-__INDEX__-default_value" value="">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace" name="params-__INDEX__-options_query" value="">
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="params-__INDEX__-options_datasource">
+          <option value="">{{ t('design.default_datasource') }}</option>
+          {% for ds in datasources %}
+          <option value="{{ ds.datasource_code }}">{{ ds.datasource_code }} — {{ ds.datasource_name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace" name="params-__INDEX__-advanced" value=""
+               title="{{ t('design.advanced_hint') }}">
+      </td>
+      <td>
+        <button type="button" class="btn btn-sm btn-ghost-danger btn-remove-param">
+          <i class="ti ti-trash"></i>
+        </button>
+      </td>
+    </tr>
+  </template>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h3 class="card-title">{{ t('design.columns') }}</h3>
+      <button type="button" id="btn-add-column" class="btn btn-sm btn-outline-primary">
+        <i class="ti ti-plus me-1"></i>{{ t('design.add_column') }}
+      </button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table table-sm">
+        <thead>
+          <tr>
+            <th>{{ t('design.field_name') }}</th>
+            <th>{{ t('design.label') }}</th>
+            <th>{{ t('design.type') }}</th>
+            <th>{{ t('design.display_format') }}</th>
+            <th>{{ t('design.width_px') }}</th>
+            <th>{{ t('design.align') }}</th>
+            <th class="w-1">{{ t('design.is_visible') }}</th>
+            <th class="w-1">{{ t('design.is_exported') }}</th>
+            <th class="w-1">{{ t('design.is_sortable') }}</th>
+            <th class="w-1">{{ t('design.is_filterable') }}</th>
+            <th class="w-1">{{ t('design.is_frozen') }}</th>
+            <th>{{ t('design.footer_aggregate') }}</th>
+            <th class="w-1"></th>
+          </tr>
+        </thead>
+        <tbody id="columns-table-body">
+          {% for c in content.columns %}
+          <tr>
+            <td>
+              <input type="text" class="form-control form-control-sm font-monospace" name="columns-{{ loop.index0 }}-field_name" value="{{ c.field_name }}">
+              {% if errors['columns.' ~ loop.index0 ~ '.field_name'] %}
+              <div class="invalid-feedback d-block">{{ errors['columns.' ~ loop.index0 ~ '.field_name'] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm" name="columns-{{ loop.index0 }}-label" value="{{ c.label }}">
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="columns-{{ loop.index0 }}-data_type">
+                <option value="">—</option>
+                {% for dt in ['text', 'int', 'decimal', 'float', 'bool', 'date', 'datetime', 'time'] %}
+                <option value="{{ dt }}" {% if c.data_type == dt %}selected{% endif %}>{{ dt }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm font-monospace" name="columns-{{ loop.index0 }}-display_format" value="{{ c.display_format or '' }}">
+              {% if errors['columns.' ~ loop.index0 ~ '.display_format'] %}
+              <div class="invalid-feedback d-block">{{ errors['columns.' ~ loop.index0 ~ '.display_format'] }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <input type="number" class="form-control form-control-sm" name="columns-{{ loop.index0 }}-width_px" value="{{ c.width_px or '' }}" min="1">
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="columns-{{ loop.index0 }}-align">
+                <option value="">—</option>
+                <option value="left" {% if c.align == 'left' %}selected{% endif %}>{{ t('design.align_left') }}</option>
+                <option value="center" {% if c.align == 'center' %}selected{% endif %}>{{ t('design.align_center') }}</option>
+                <option value="right" {% if c.align == 'right' %}selected{% endif %}>{{ t('design.align_right') }}</option>
+              </select>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="columns-{{ loop.index0 }}-is_visible" {% if c.get('is_visible', True) %}checked{% endif %}>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="columns-{{ loop.index0 }}-is_exported" {% if c.get('is_exported', True) %}checked{% endif %}>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="columns-{{ loop.index0 }}-is_sortable" {% if c.get('is_sortable', True) %}checked{% endif %}>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="columns-{{ loop.index0 }}-is_filterable" {% if c.get('is_filterable', True) %}checked{% endif %}>
+            </td>
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="columns-{{ loop.index0 }}-is_frozen" {% if c.get('is_frozen', False) %}checked{% endif %}>
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="columns-{{ loop.index0 }}-footer_aggregate">
+                <option value="">—</option>
+                {% for agg in ['sum', 'avg', 'count', 'min', 'max'] %}
+                <option value="{{ agg }}" {% if c.footer_aggregate == agg %}selected{% endif %}>{{ agg }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <button type="button" class="btn btn-sm btn-ghost-danger btn-remove-column">
+                <i class="ti ti-trash"></i>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <template id="column-row-template">
+    <tr>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace" name="columns-__INDEX__-field_name" value="">
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm" name="columns-__INDEX__-label" value="">
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="columns-__INDEX__-data_type">
+          <option value="">—</option>
+          {% for dt in ['text', 'int', 'decimal', 'float', 'bool', 'date', 'datetime', 'time'] %}
+          <option value="{{ dt }}">{{ dt }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-control form-control-sm font-monospace" name="columns-__INDEX__-display_format" value="">
+      </td>
+      <td>
+        <input type="number" class="form-control form-control-sm" name="columns-__INDEX__-width_px" value="" min="1">
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="columns-__INDEX__-align">
+          <option value="">—</option>
+          <option value="left">{{ t('design.align_left') }}</option>
+          <option value="center">{{ t('design.align_center') }}</option>
+          <option value="right">{{ t('design.align_right') }}</option>
+        </select>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="columns-__INDEX__-is_visible" checked>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="columns-__INDEX__-is_exported" checked>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="columns-__INDEX__-is_sortable" checked>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="columns-__INDEX__-is_filterable" checked>
+      </td>
+      <td class="text-center">
+        <input type="checkbox" class="form-check-input" name="columns-__INDEX__-is_frozen">
+      </td>
+      <td>
+        <select class="form-select form-select-sm" name="columns-__INDEX__-footer_aggregate">
+          <option value="">—</option>
+          {% for agg in ['sum', 'avg', 'count', 'min', 'max'] %}
+          <option value="{{ agg }}">{{ agg }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <button type="button" class="btn btn-sm btn-ghost-danger btn-remove-column">
+          <i class="ti ti-trash"></i>
+        </button>
+      </td>
+    </tr>
+  </template>
+
+  {% if not is_new %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h3 class="card-title">{{ t('design.test_params') }}</h3>
+    </div>
+    <div class="card-body">
+      {% set active_params = [] %}
+      {% for p in content.params %}
+        {% if p.get('is_active', True) %}
+          {% set _ = active_params.append(p) %}
+        {% endif %}
+      {% endfor %}
+
+      {% if active_params %}
+      <div class="row g-3">
+        {% for p in active_params %}
+        <div class="col-md-4">
+          <label class="form-label">
+            {{ p.label or p.param_name }} (<code>{{ p.param_name }}</code>)
+          </label>
+          <input type="text" class="form-control" name="test__{{ p.param_name }}"
+                 value="{{ test_params.get(p.param_name, '') }}"
+                 placeholder="{{ p.default_value or '' }}">
+          {% if p.input_kind == 'multiselect' %}
+          <small class="form-hint">{{ t('design.test_param_multi_hint') }}</small>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-secondary mb-0">{{ t('design.no_test_params') }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    {% if is_new %}
+    <button type="submit" class="btn btn-primary">
+      <i class="ti ti-device-floppy me-1"></i>{{ t('design.create') }}
+    </button>
+    {% else %}
+    <div class="btn-list">
+      <button type="submit" name="action" value="save" class="btn btn-primary">
+        <i class="ti ti-device-floppy me-1"></i>{{ t('design.save') }}
+      </button>
+      <button type="submit" name="action" value="test" class="btn btn-outline-primary">
+        <i class="ti ti-player-play me-1"></i>{{ t('design.save_and_test') }}
+      </button>
+      <button type="submit" name="action" value="columns_from_test" class="btn btn-outline-secondary">
+        <i class="ti ti-table-plus me-1"></i>{{ t('design.fill_columns') }}
+      </button>
+    </div>
+    {% endif %}
+  </div>
+</form>
+
+{% if not is_new and draft %}
+<div class="mb-4">
+  <form method="post" action="/design/drafts/{{ draft.draft_id }}/submit" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+    <button type="submit" class="btn btn-success" {% if not is_tested %}disabled title="{{ t('design.need_test_to_submit') }}"{% endif %}>
+      <i class="ti ti-send me-1"></i>{{ t('design.submit') }}
+    </button>
+  </form>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.report_name') }}</h3>
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info mb-3">{{ t('design.readonly_hint') }}</div>
+    <dl class="row mb-0">
+      <dt class="col-sm-3">{{ t('design.report_code') }}</dt>
+      <dd class="col-sm-9"><code>{{ code }}</code></dd>
+      <dt class="col-sm-3">{{ t('design.report_name') }}</dt>
+      <dd class="col-sm-9">{{ content.report_name }}</dd>
+      <dt class="col-sm-3">{{ t('design.description') }}</dt>
+      <dd class="col-sm-9">{{ content.description or '—' }}</dd>
+      <dt class="col-sm-3">{{ t('design.group') }}</dt>
+      <dd class="col-sm-9">{{ content.group }}</dd>
+      <dt class="col-sm-3">{{ t('design.datasource') }}</dt>
+      <dd class="col-sm-9">{{ content.datasource }}</dd>
+      <dt class="col-sm-3">{{ t('design.cache_ttl') }}</dt>
+      <dd class="col-sm-9">{{ content.cache_ttl_seconds or 0 }}s</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.query_text') }}</h3>
+  </div>
+  <div class="card-body">
+    <pre class="bg-dark text-light p-3 rounded font-monospace">{{ content.query_text }}</pre>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.params') }}</h3>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table table-sm">
+      <thead>
+        <tr>
+          <th>{{ t('design.param_name') }}</th>
+          <th>{{ t('design.label') }}</th>
+          <th>{{ t('design.type') }}</th>
+          <th>{{ t('design.input_kind') }}</th>
+          <th>{{ t('design.is_required') }}</th>
+          <th>{{ t('design.default_value') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in content.params %}
+        <tr>
+          <td><code>{{ p.param_name }}</code></td>
+          <td>{{ p.label }}</td>
+          <td>{{ p.data_type }}</td>
+          <td>{{ p.input_kind }}</td>
+          <td>{{ p.is_required }}</td>
+          <td>{{ p.default_value or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-secondary text-center">{{ t('design.no_params') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ t('design.columns') }}</h3>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table table-sm">
+      <thead>
+        <tr>
+          <th>{{ t('design.field_name') }}</th>
+          <th>{{ t('design.label') }}</th>
+          <th>{{ t('design.type') }}</th>
+          <th>{{ t('design.display_format') }}</th>
+          <th>{{ t('design.width_px') }}</th>
+          <th>{{ t('design.align') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in content.columns %}
+        <tr>
+          <td><code>{{ c.field_name }}</code></td>
+          <td>{{ c.label }}</td>
+          <td>{{ c.data_type or '—' }}</td>
+          <td>{{ c.display_format or '—' }}</td>
+          <td>{{ c.width_px or '—' }}</td>
+          <td>{{ c.align or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-secondary text-center">{{ t('design.no_columns') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static('js/design.js') }}"></script>
+{% endblock %}

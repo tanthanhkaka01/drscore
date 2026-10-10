@@ -21,7 +21,7 @@ from drscore.logsetup import request_client, request_id, request_user, setup_log
 from drscore.settings import get_settings
 from drscore.web.deps import csrf_guard
 from drscore.web.i18n import error_message, request_locale
-from drscore.web.routes import api, auth, pages
+from drscore.web.routes import api, auth, design, pages
 from drscore.web.templating import render
 
 log = logging.getLogger("drscore.web")
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth.router)
     app.include_router(api.router)
+    app.include_router(design.router)
     app.include_router(pages.router)
 
     from drscore.admin.web import mount as mount_admin

@@ -47,6 +47,7 @@ python -m drscore grant show --user hr_all
 | Home: the user's report groups and reports, with search | `/` |
 | A report: parameters, Run, grid, Refresh (with `can_refresh`), XLSX / CSV / TXT (with `can_export`) | `/reports/{code}` |
 | Own account: change password, language | `/account` |
+| Report design (designers and admins): draft, test, propose reports, and approve changes | `/design` |
 | Administration (administrators only): groups, reports, parameters, columns, row filters, datasources, users, attributes, roles, grants, logs - with Test run, Test connection, Unlock | `/admin/` |
 
 Exports are made on the server from the snapshot on screen, with the same permission check and row
@@ -106,11 +107,15 @@ tab for the parameters the user chose: the guest token DRS issues opens that one
 needs no Superset account), so two users with different parameters see different data at the same
 moment. Setup: `docs/superset-setup.md`. A report with row-filter rules cannot be embedded.
 
-## Administration
+## Administration and report design
 
 Everything can be done without SQL on the admin pages (`/admin/`, administrators only, see
 `docs/admin-guide.md`): every save is validated and written to the audit log. Reports designed on
 SQLite move to PostgreSQL with `metadata export` / `metadata import`.
+
+DRS 1.2.0 adds a **report designer** role (`/design`, see `docs/designer-guide.md`): authorized
+users can draft new reports, test SQL queries, and propose changes, which administrators review
+and approve before live tables are updated.
 
 ## Report sources
 
@@ -181,6 +186,9 @@ export DRS_DB_PASSWORD='...' DRS_SECRET_KEY='<the key>'      # a service reads t
 database without an administrator the default one (`admin` / `admin`, to be changed at the first
 sign-in), checks the set-up (secret key, HTTPS cookie, administrator) and starts `[app] workers`
 processes.
+
+Upgrading an existing installation to 1.2.0 needs `python -m drscore db upgrade` (migration 0009
+adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`).
 
 ## Requirements
 
@@ -260,9 +268,9 @@ run uses a throw-away schema, dropped at the end. Use a test database, never a p
 | `python -m drscore user list / disable / enable / set-password / set-admin [--off]` | Users |
 | `python -m drscore user attr set USER NAME VALUE... / remove USER NAME [VALUE] / list USER` | Row-filter attributes (`*` = every value) |
 | `python -m drscore role add CODE [--name N] / list / member add CODE USER / member remove CODE USER` | Roles |
-| `python -m drscore grant group CODE / grant report CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
-| `python -m drscore revoke group CODE / revoke report CODE --user U \| --role R` | Remove a grant |
-| `python -m drscore grant show --user U` | What a user can see, and through which grant |
+| `python -m drscore grant group CODE [--design] / grant report CODE / grant datasource CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
+| `python -m drscore revoke group CODE / revoke report CODE / revoke datasource CODE --user U \| --role R` | Remove a grant |
+| `python -m drscore grant show --user U` | What a user can see, design rights, and through which grant |
 
 The first administrator is made by `serve`: a DRS database without an administrator gets user
 `admin` with the password `admin`. That password opens only the account page, where it must be

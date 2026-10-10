@@ -239,10 +239,18 @@ def cmd_grant(args: argparse.Namespace) -> int:
 
     with _admin_session() as s:
         g = _admin_call(admin.grant, s, cli_actor(), args.kind, args.code, args.user, args.role,
-                        args.export, args.refresh)
+                        getattr(args, "export", None), getattr(args, "refresh", None),
+                        getattr(args, "design", None))
         who = f"user {args.user}" if args.user else f"role {args.role}"
-        print(f"Granted {args.kind} {args.code} to {who} "
-              f"(export: {'yes' if g.can_export else 'no'}, refresh: {'yes' if g.can_refresh else 'no'}).")
+        if args.kind == "datasource":
+            print(f"Granted datasource {args.code} to {who}.")
+        elif args.kind == "group":
+            print(f"Granted group {args.code} to {who} "
+                  f"(export: {'yes' if g.can_export else 'no'}, refresh: {'yes' if g.can_refresh else 'no'}, "
+                  f"design: {'yes' if g.can_design else 'no'}).")
+        else:
+            print(f"Granted report {args.code} to {who} "
+                  f"(export: {'yes' if g.can_export else 'no'}, refresh: {'yes' if g.can_refresh else 'no'}).")
     return 0
 
 
@@ -257,15 +265,32 @@ def cmd_revoke(args: argparse.Namespace) -> int:
 
 
 def cmd_grant_show(args: argparse.Namespace) -> int:
+    from sqlalchemy import select
+
     from drscore.admin import service as admin
+    from drscore.authz.design import design_rights
+    from drscore.db.models import Datasource, ReportGroup
 
     with _admin_session() as s:
         rows = _admin_call(admin.grant_show, s, args.user)
+        user = admin.get_user(s, args.user)
         print(f"{'GROUP':<12} {'REPORT':<24} {'TYPE':<5} {'EXPORT':<7} {'REFRESH':<8} VIA")
         for r in rows:
             print(f"{r['group']:<12} {r['report']:<24} {r['type']:<5} {'yes' if r['can_export'] else 'no':<7} "
                   f"{'yes' if r['can_refresh'] else 'no':<8} {'; '.join(r['via'])}")
         print(f"{len(rows)} report(s) visible to {args.user}.")
+
+        rights = design_rights(s, user)
+        if rights.group_ids:
+            group_codes = sorted(s.scalars(select(ReportGroup.group_code).where(ReportGroup.group_id.in_(rights.group_ids))).all())
+        else:
+            group_codes = []
+        if rights.datasource_ids:
+            ds_codes = sorted(s.scalars(select(Datasource.datasource_code).where(Datasource.datasource_id.in_(rights.datasource_ids))).all())
+        else:
+            ds_codes = []
+        print(f"Design groups: {', '.join(group_codes) or '-'}")
+        print(f"Datasources: {', '.join(ds_codes) or '-'}")
     return 0
 
 
@@ -401,22 +426,26 @@ def _add_grant_parsers(sub) -> None:
         who.add_argument("--user")
         who.add_argument("--role")
 
-    grant = sub.add_parser("grant", help="grant a group or a report").add_subparsers(dest="kind", required=True)
-    for kind in ("group", "report"):
+    grant = sub.add_parser("grant", help="grant a group, a report or a datasource").add_subparsers(dest="kind", required=True)
+    for kind in ("group", "report", "datasource"):
         p = grant.add_parser(kind, help=f"grant a {kind} (by its code)")
         p.add_argument("code")
         principal(p)
-        p.add_argument("--export", dest="export", action="store_true", default=None)
-        p.add_argument("--no-export", dest="export", action="store_false")
-        p.add_argument("--refresh", dest="refresh", action="store_true", default=None)
-        p.add_argument("--no-refresh", dest="refresh", action="store_false")
+        if kind in ("group", "report"):
+            p.add_argument("--export", dest="export", action="store_true", default=None)
+            p.add_argument("--no-export", dest="export", action="store_false")
+            p.add_argument("--refresh", dest="refresh", action="store_true", default=None)
+            p.add_argument("--no-refresh", dest="refresh", action="store_false")
+        if kind == "group":
+            p.add_argument("--design", dest="design", action="store_true", default=None)
+            p.add_argument("--no-design", dest="design", action="store_false")
         p.set_defaults(handler=cmd_grant)
     p = grant.add_parser("show", help="the reports a user can view, and through which grant")
     p.add_argument("--user", required=True)
     p.set_defaults(handler=cmd_grant_show)
 
     revoke = sub.add_parser("revoke", help="remove a grant").add_subparsers(dest="kind", required=True)
-    for kind in ("group", "report"):
+    for kind in ("group", "report", "datasource"):
         p = revoke.add_parser(kind, help=f"revoke a {kind} grant")
         p.add_argument("code")
         principal(p)

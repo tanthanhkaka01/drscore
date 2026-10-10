@@ -36,6 +36,7 @@ from drscore.db.models import (
     AccessLog,
     AuditLog,
     Datasource,
+    GrantDatasource,
     GrantGroup,
     GrantReport,
     Report,
@@ -640,12 +641,13 @@ class RoleAdmin(AuditedView, model=Role):
 
 class _GrantAdmin(AuditedView):
     category = _("Users and access")
-    column_labels = {"group": L("Group"), "report": L("Report"), "user": L("User"), "role": L("Role"),
-                     "can_export": L("Can export"), "can_refresh": L("Can refresh"), "granted_by": L("Granted by"),
-                     "granted_at": L("Granted at")}
+    column_labels = {"group": L("Group"), "report": L("Report"), "datasource": L("Datasource"),
+                     "user": L("User"), "role": L("Role"),
+                     "can_export": L("Can export"), "can_refresh": L("Can refresh"), "can_design": L("Can design"),
+                     "granted_by": L("Granted by"), "granted_at": L("Granted at")}
 
     def object_key(self, obj):
-        target = getattr(obj, "group", None) or getattr(obj, "report", None)
+        target = getattr(obj, "group", None) or getattr(obj, "report", None) or getattr(obj, "datasource", None)
         who = f"user {obj.user}" if obj.user else f"role {obj.role}"
         return f"{target} -> {who}"
 
@@ -660,8 +662,9 @@ class GrantGroupAdmin(_GrantAdmin, model=GrantGroup):
     name_plural = _("Group grants")
     icon = "fa-solid fa-key"
     column_list = [GrantGroup.group, GrantGroup.user, GrantGroup.role, GrantGroup.can_export, GrantGroup.can_refresh,
-                   GrantGroup.granted_by, GrantGroup.granted_at]
-    form_columns = [GrantGroup.group, GrantGroup.user, GrantGroup.role, GrantGroup.can_export, GrantGroup.can_refresh]
+                   GrantGroup.can_design, GrantGroup.granted_by, GrantGroup.granted_at]
+    form_columns = [GrantGroup.group, GrantGroup.user, GrantGroup.role, GrantGroup.can_export, GrantGroup.can_refresh,
+                    GrantGroup.can_design]
 
 
 class GrantReportAdmin(_GrantAdmin, model=GrantReport):
@@ -672,6 +675,15 @@ class GrantReportAdmin(_GrantAdmin, model=GrantReport):
                    GrantReport.can_refresh, GrantReport.granted_by, GrantReport.granted_at]
     form_columns = [GrantReport.report, GrantReport.user, GrantReport.role, GrantReport.can_export,
                     GrantReport.can_refresh]
+
+
+class GrantDatasourceAdmin(_GrantAdmin, model=GrantDatasource):
+    name = _("Datasource grant")
+    name_plural = _("Datasource grants")
+    icon = "fa-solid fa-key"
+    column_list = [GrantDatasource.datasource, GrantDatasource.user, GrantDatasource.role,
+                   GrantDatasource.granted_by, GrantDatasource.granted_at]
+    form_columns = [GrantDatasource.datasource, GrantDatasource.user, GrantDatasource.role]
 
 
 # --------------------------------------------------------------------------------------------
@@ -712,7 +724,7 @@ class HistoryAdmin(ReadOnlyView, model=ReportSnapshotHistory):
 
 
 VIEWS = [GroupAdmin, ReportAdmin, ParamAdmin, ColumnAdmin, RowFilterAdmin, DatasourceAdmin, UserAdmin, AttributeAdmin,
-         RoleAdmin, GrantGroupAdmin, GrantReportAdmin, AccessLogAdmin, AuditLogAdmin, HistoryAdmin]
+         RoleAdmin, GrantGroupAdmin, GrantReportAdmin, GrantDatasourceAdmin, AccessLogAdmin, AuditLogAdmin, HistoryAdmin]
 
 
 def mount(app, database: Database, settings: AppSettings, secret: str) -> Admin:

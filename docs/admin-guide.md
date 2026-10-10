@@ -14,7 +14,7 @@ user menu.
 | --- | --- | --- |
 | Reports | report groups, reports, parameters, grid columns, row filters | report: **Test run** (runs it now with the default parameters, as you, and shows the row count or the error; it cannot choose a value, so for a required parameter without a default it says so), **Open report** (to the report's own page, where the parameters are chosen), **Check** (the findings of `report validate`), **Create BI table** (runs it with the default parameters so that the dataset named in "BI dataset table" exists and a Superset dashboard can be designed on it - what `cache warm --report CODE` does; any run of the report from its own page does it too) |
 | Datasources | every connection setting, "New password" (stored encrypted, never shown) | **Test connection** |
-| Users and access | users ("New password", ends their sessions; "Must change password": the user's next sign-in opens only the account page until they have chosen a new one), user attributes, roles and members, group grants, report grants | user: **Unlock** (after too many wrong passwords) |
+| Users and access | users ("New password", ends their sessions; "Must change password": the user's next sign-in opens only the account page until they have chosen a new one), user attributes, roles and members, group grants ("Can design"), report grants, datasource grants | user: **Unlock** (after too many wrong passwords) |
 | Logs | access log (who opened / ran / exported what), audit log (every change), snapshot history | read-only |
 
 Every save is checked like the CLI checks it (codes, parameter names, default-value tokens, grid
@@ -27,6 +27,66 @@ Security: only users with `is_admin` get in (others get 403, a signed-out visito
 -in page); the pages use the portal's session. A form post or button that does not come from a page
 of the same site (Origin / Referer check) is refused with 403, so another site cannot drive an
 administrator's browser.
+
+## Report designers and approvals
+
+In DRS 1.2.0, non-admin users can be given the **report designer** role to compose, test, and
+propose reports in their own drafts table (`drs_report_draft`). Administrators review and approve
+every proposal before it reaches live reports. For the complete workflow, see the
+[Report designer guide](designer-guide.md).
+
+Upgrading an existing database to 1.2.0 requires `python -m drscore db upgrade` (migration 0009
+adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`).
+
+### Setting up a designer
+
+A user is recognized as a designer when they have:
+1. At least one group grant with **Can design** ticked (`drs_grant_group.can_design = true`).
+2. At least one datasource grant (`drs_grant_datasource`).
+
+Administrators always have full designer access. Designers see a **Report design** link (`/design`)
+in the portal menu; administrators also see a badge displaying the number of pending drafts awaiting review.
+
+**Admin UI**:
+- Under **Users and access > Group grants**, create or edit a group grant and check **Can design**.
+- Under **Users and access > Datasource grants**, grant the target datasource to the user or role.
+
+**CLI**:
+```bash
+# Grant a datasource to a user or role
+python -m drscore grant datasource SALES_DB --user john
+python -m drscore grant datasource SALES_DB --role ANALYSTS
+
+# Grant a report group with design rights
+python -m drscore grant group SALES --user john --design
+python -m drscore grant group SALES --role ANALYSTS --design
+
+# Revoke grants
+python -m drscore revoke datasource SALES_DB --user john
+python -m drscore revoke group SALES --user john
+
+# Inspect a user's visible reports and design rights
+python -m drscore grant show --user john
+```
+
+### Reviewing and approving drafts
+
+Pending proposals appear under `/design`. Clicking a draft opens the review panel showing changed
+header fields, added/removed/changed parameters and columns, a unified diff of the SQL query, and
+the author's last test metrics.
+
+- **Approve**: An optional review note can be entered. Approval writes live rows in a single
+  transaction (name, description, group, datasource, SQL, retention, parameters, columns).
+  Administrative settings (`is_restricted`, `is_active`, `report_type`, `grid_enabled`, HTML/BI
+  designs, timeout, max rows, row filters, grants) are never modified by a designer. A new report
+  is created active, type `GRID`, unrestricted, and becomes visible immediately to anyone with a
+  grant on that group—check the group before approving.
+- **Reject**: A review note is required explaining what to fix. The draft moves to `REJECTED`, and
+  the author can amend and re-test it.
+
+**Security**: The designer's SQL runs with the datasource's database login. Ensure that login is
+strictly read-only and restricted to the tables designers may read (SQL Server: `db_datareader` or
+`SELECT` on specific views). Note that designer test runs bypass row filters.
 
 ## Move reports between databases: metadata export / import
 

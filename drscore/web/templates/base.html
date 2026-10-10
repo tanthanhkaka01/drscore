@@ -49,6 +49,17 @@
             </div>
           </li>
           {% endfor %}
+          {% if can_design %}
+          <li class="nav-item {% if path.startswith('/design') %}active{% endif %}">
+            <a class="nav-link" href="/design">
+              <span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-pencil"></i></span>
+              <span class="nav-link-title">{{ t('design.nav') }}</span>
+              {% if auth and auth.is_admin and pending_drafts %}
+              <span class="badge bg-red ms-auto">{{ pending_drafts }}</span>
+              {% endif %}
+            </a>
+          </li>
+          {% endif %}
           {% if auth and auth.is_admin %}
           <li class="nav-item">
             <a class="nav-link" href="/admin/">

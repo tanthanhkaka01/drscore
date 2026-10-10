@@ -386,6 +386,7 @@ class GrantGroup(Base):
     role_id: Mapped[int | None] = _fk("drs_role.role_id", nullable=True)
     can_export: Mapped[bool] = _bool(True)
     can_refresh: Mapped[bool] = _bool(False)
+    can_design: Mapped[bool] = _bool(False)
     granted_by: Mapped[str | None] = mapped_column(String(100))
     granted_at: Mapped[datetime] = _now()
 
@@ -410,6 +411,60 @@ class GrantReport(Base):
     report: Mapped[Report] = relationship()
     user: Mapped[User | None] = relationship()
     role: Mapped[Role | None] = relationship()
+
+
+class GrantDatasource(Base):
+    __tablename__ = "drs_grant_datasource"
+    __table_args__ = _grant_args("drs_grant_datasource", "datasource_id")
+
+    grant_id: Mapped[int] = _id()
+    datasource_id: Mapped[int] = _fk("drs_datasource.datasource_id")
+    user_id: Mapped[int | None] = _fk("drs_user.user_id", nullable=True)
+    role_id: Mapped[int | None] = _fk("drs_role.role_id", nullable=True)
+    granted_by: Mapped[str | None] = mapped_column(String(100))
+    granted_at: Mapped[datetime] = _now()
+
+    datasource: Mapped[Datasource] = relationship()
+    user: Mapped[User | None] = relationship()
+    role: Mapped[Role | None] = relationship()
+
+
+# --------------------------------------------------------------------------------------------
+# Designer drafts
+
+DRAFT_STATUSES = ("DRAFT", "PENDING", "APPROVED", "REJECTED")
+
+
+class ReportDraft(Base):
+    __tablename__ = "drs_report_draft"
+    __table_args__ = (
+        CheckConstraint(_in("status", DRAFT_STATUSES), name="status"),
+        Index(None, "author"),
+        Index(None, "status"),
+        Index(
+            "uq_drs_report_draft_open_code", "report_code", unique=True,
+            postgresql_where=text("status IN ('DRAFT', 'PENDING')"),
+            sqlite_where=text("status IN ('DRAFT', 'PENDING')"),
+        ),
+        AUTOINC,
+    )
+
+    draft_id: Mapped[int] = _id()
+    report_id: Mapped[int | None] = _fk("drs_report.report_id", nullable=True)
+    report_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="DRAFT", server_default="DRAFT")
+    content_json: Mapped[Any] = mapped_column(JsonType, nullable=False)
+    tested_hash: Mapped[str | None] = mapped_column(String(64))
+    test_summary: Mapped[Any | None] = mapped_column(JsonType)
+    author: Mapped[str] = mapped_column(String(100), nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    review_note: Mapped[str | None] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+
+    report: Mapped[Report | None] = relationship()
 
 
 # --------------------------------------------------------------------------------------------

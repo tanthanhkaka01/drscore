@@ -16,6 +16,8 @@ from drscore.audit import audit
 from drscore.auth import service as auth
 from drscore.authz.permissions import accessible_reports
 from drscore.db.models import (
+    Datasource,
+    GrantDatasource,
     GrantGroup,
     GrantReport,
     Report,
@@ -231,6 +233,11 @@ def _target(session: Session, kind: str, code: str):
         if obj is None:
             raise AdminError(f"No report {code!r}.")
         return GrantReport, GrantReport.report_id, obj.report_id
+    if kind == "datasource":
+        obj = session.scalars(select(Datasource).where(Datasource.datasource_code == code)).one_or_none()
+        if obj is None:
+            raise AdminError(f"No datasource {code!r}.")
+        return GrantDatasource, GrantDatasource.datasource_id, obj.datasource_id
     raise AdminError(f"Unknown grant kind {kind!r}.")
 
 
@@ -245,8 +252,13 @@ def _principal(session: Session, username: str | None, role_code: str | None) ->
 
 
 def grant(session: Session, actor: str, kind: str, code: str, username: str | None = None,
-          role_code: str | None = None, can_export: bool | None = None, can_refresh: bool | None = None):
+          role_code: str | None = None, can_export: bool | None = None, can_refresh: bool | None = None,
+          can_design: bool | None = None):
     """Creates a grant, or updates the flags of the existing one for the same principal."""
+    if can_design is not None and kind != "group":
+        raise AdminError("The --design / --no-design option applies only to group grants.")
+    if (can_export is not None or can_refresh is not None) and kind == "datasource":
+        raise AdminError("The --export and --refresh options do not apply to datasource grants.")
     model, object_col, object_id = _target(session, kind, code)
     user_id, role_id, who = _principal(session, username, role_code)
     existing = session.scalars(select(model).where(
@@ -254,21 +266,45 @@ def grant(session: Session, actor: str, kind: str, code: str, username: str | No
         model.user_id == user_id if user_id is not None else model.role_id == role_id,
     )).one_or_none()
     before = None
+    if kind == "datasource":
+        if existing is None:
+            existing = model(user_id=user_id, role_id=role_id, granted_by=actor)
+            setattr(existing, object_col.key, object_id)
+            session.add(existing)
+        else:
+            before = {"granted_by": existing.granted_by}
+            existing.granted_by = actor
+        audit(session, actor, "GRANT_DATASOURCE", "grant_datasource", f"{code} -> {who}", before=before,
+              after={"granted_by": existing.granted_by})
+        return existing
+
     if existing is None:
-        existing = model(user_id=user_id, role_id=role_id, granted_by=actor,
-                         can_export=True if can_export is None else can_export,
-                         can_refresh=False if can_refresh is None else can_refresh)
+        kwargs = {
+            "user_id": user_id, "role_id": role_id, "granted_by": actor,
+            "can_export": True if can_export is None else can_export,
+            "can_refresh": False if can_refresh is None else can_refresh,
+        }
+        if kind == "group":
+            kwargs["can_design"] = False if can_design is None else can_design
+        existing = model(**kwargs)
         setattr(existing, object_col.key, object_id)
         session.add(existing)
     else:
         before = {"can_export": existing.can_export, "can_refresh": existing.can_refresh}
+        if kind == "group":
+            before["can_design"] = existing.can_design
         if can_export is not None:
             existing.can_export = can_export
         if can_refresh is not None:
             existing.can_refresh = can_refresh
+        if can_design is not None and kind == "group":
+            existing.can_design = can_design
         existing.granted_by = actor
+    after = {"can_export": existing.can_export, "can_refresh": existing.can_refresh}
+    if kind == "group":
+        after["can_design"] = existing.can_design
     audit(session, actor, f"GRANT_{kind.upper()}", f"grant_{kind}", f"{code} -> {who}", before=before,
-          after={"can_export": existing.can_export, "can_refresh": existing.can_refresh})
+          after=after)
     return existing
 
 

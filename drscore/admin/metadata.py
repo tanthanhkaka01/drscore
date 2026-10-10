@@ -2,13 +2,15 @@
 
 The way reports designed on SQLite reach PostgreSQL (or one DRS reaches another). The file holds
 datasources (connection settings), report groups, reports with their parameters, columns and row
-filters, users (name, e-mail, attributes), roles with their members, and grants. Rows refer to each
-other by code (``group_code``, ``datasource_code``, ``username``...), never by id, so ids may differ
+filters, users (name, e-mail, attributes), roles with their members, and grants (group, report,
+and datasource grants, including designer rights). Rows refer to each other by code
+(``group_code``, ``datasource_code``, ``username``...), never by id, so ids may differ
 between the two databases.
 
 Never in the file: password hashes, encrypted datasource passwords (``enc:``), sessions, caches,
 logs. A datasource whose password was encrypted arrives without one (``datasource set-password``);
 an ``env:NAME`` reference is a name, not a secret, and is kept. Users arrive without a password.
+Drafts are never exported.
 
 Import upserts by code: an existing row is updated, a missing one created; nothing outside the file
 is deleted, except that the parameters, columns and row filters of a report in the file become
@@ -33,6 +35,7 @@ from sqlalchemy.orm import Session
 from drscore.audit import audit, row_snapshot
 from drscore.db.models import (
     Datasource,
+    GrantDatasource,
     GrantGroup,
     GrantReport,
     Report,
@@ -154,6 +157,20 @@ class GrantRow(BaseModel):
     role: str | None = None
     can_export: bool = True
     can_refresh: bool = False
+    can_design: bool = False
+
+    @model_validator(mode="after")
+    def _one_principal(self):
+        if (self.user is None) == (self.role is None):
+            raise ValueError(f"grant on {self.target}: exactly one of user or role")
+        return self
+
+
+class DatasourceGrantRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: str  # datasource_code
+    user: str | None = None
+    role: str | None = None
 
     @model_validator(mode="after")
     def _one_principal(self):
@@ -175,6 +192,7 @@ class MetadataFile(BaseModel):
     roles: list[RoleRow] = []
     group_grants: list[GrantRow] = []
     report_grants: list[GrantRow] = []
+    datasource_grants: list[DatasourceGrantRow] = []
 
 
 # --------------------------------------------------------------------------------------------
@@ -219,13 +237,18 @@ def export(s: Session, *, reports: Iterable[str] | None = None, source: str | No
     ds_ids |= {p.options_datasource_id for ps in params.values() for p in ps if p.options_datasource_id}
     datasources = [d for d in s.scalars(select(Datasource).order_by(Datasource.datasource_code))
                    if not wanted or d.datasource_id in ds_ids]
+    datasource_ids = {d.datasource_id for d in datasources}
+
+    datasource_grants = [g for g in s.scalars(select(GrantDatasource).order_by(GrantDatasource.grant_id))
+                         if not wanted or g.datasource_id in datasource_ids]
 
     roles = list(s.scalars(select(Role).order_by(Role.role_code)))
     users = list(s.scalars(select(User).order_by(User.username)))
     if wanted:
-        role_ids = {g.role_id for g in [*group_grants, *report_grants] if g.role_id}
+        all_grants = [*group_grants, *report_grants, *datasource_grants]
+        role_ids = {g.role_id for g in all_grants if g.role_id}
         roles = [r for r in roles if r.role_id in role_ids]
-        user_ids = {g.user_id for g in [*group_grants, *report_grants] if g.user_id}
+        user_ids = {g.user_id for g in all_grants if g.user_id}
         user_ids |= {u.user_id for r in roles for u in r.users}
         users = [u for u in users if u.user_id in user_ids]
 
@@ -251,8 +274,15 @@ def export(s: Session, *, reports: Iterable[str] | None = None, source: str | No
         return {**_values(u), "attributes": attributes}
 
     def grant(g, target: str) -> dict:
-        return {"target": target, "user": g.user.username if g.user else None,
-                "role": g.role.role_code if g.role else None, "can_export": g.can_export, "can_refresh": g.can_refresh}
+        row = {"target": target, "user": g.user.username if g.user else None,
+               "role": g.role.role_code if g.role else None, "can_export": g.can_export, "can_refresh": g.can_refresh}
+        if hasattr(g, "can_design"):
+            row["can_design"] = g.can_design
+        return row
+
+    def ds_grant(g: GrantDatasource) -> dict:
+        return {"target": g.datasource.datasource_code, "user": g.user.username if g.user else None,
+                "role": g.role.role_code if g.role else None}
 
     return {
         "format": FORMAT, "version": VERSION,
@@ -265,6 +295,7 @@ def export(s: Session, *, reports: Iterable[str] | None = None, source: str | No
         "roles": [{**_values(r), "members": sorted(u.username for u in r.users)} for r in roles],
         "group_grants": [grant(g, g.group.group_code) for g in group_grants],
         "report_grants": [grant(g, g.report.report_code) for g in report_grants],
+        "datasource_grants": [ds_grant(g) for g in datasource_grants],
     }
 
 
@@ -436,9 +467,25 @@ def import_metadata(s: Session, data: MetadataFile, actor: str) -> ImportResult:
                 key["role_id"] = imp.lookup(Role, "role_code", g.role, "role").role_id
             existing = s.scalars(select(model).filter_by(**key)).first()
             refs = {} if existing is not None else {"granted_by": actor}
-            imp.upsert(model, key, {"can_export": g.can_export, "can_refresh": g.can_refresh},
+            values = {"can_export": g.can_export, "can_refresh": g.can_refresh}
+            if hasattr(model, "can_design"):
+                values["can_design"] = g.can_design
+            imp.upsert(model, key, values,
                        f"{label} grant {g.target} -> {who}", **refs)
 
     grants(GrantGroup, ReportGroup, "group_code", "group_id", data.group_grants, "group")
     grants(GrantReport, Report, "report_code", "report_id", data.report_grants, "report")
+
+    for dg in data.datasource_grants:
+        ds = imp.lookup(Datasource, "datasource_code", dg.target, "datasource")
+        key = {"datasource_id": ds.datasource_id}
+        who = f"user {dg.user}" if dg.user else f"role {dg.role}"
+        if dg.user:
+            key["user_id"] = imp.lookup(User, "username", dg.user, "user").user_id
+        else:
+            key["role_id"] = imp.lookup(Role, "role_code", dg.role, "role").role_id
+        existing = s.scalars(select(GrantDatasource).filter_by(**key)).first()
+        refs = {} if existing is not None else {"granted_by": actor}
+        imp.upsert(GrantDatasource, key, {}, f"datasource grant {dg.target} -> {who}", **refs)
+
     return imp.result

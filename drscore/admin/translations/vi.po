@@ -225,6 +225,9 @@ msgstr "Được xuất file"
 msgid "Can refresh"
 msgstr "Được làm mới"
 
+msgid "Can design"
+msgstr "Được thiết kế"
+
 msgid "Check"
 msgstr "Kiểm tra"
 
@@ -248,6 +251,12 @@ msgstr "Nguồn dữ liệu"
 
 msgid "Datasources"
 msgstr "Nguồn dữ liệu"
+
+msgid "Datasource grant"
+msgstr "Quyền nguồn dữ liệu"
+
+msgid "Datasource grants"
+msgstr "Quyền nguồn dữ liệu"
 
 msgid "Default schema"
 msgstr "Schema mặc định"
