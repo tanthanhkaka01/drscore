@@ -158,6 +158,7 @@ class GrantRow(BaseModel):
     can_export: bool = True
     can_refresh: bool = False
     can_design: bool = False
+    can_publish: bool = False
 
     @model_validator(mode="after")
     def _one_principal(self):
@@ -278,6 +279,8 @@ def export(s: Session, *, reports: Iterable[str] | None = None, source: str | No
                "role": g.role.role_code if g.role else None, "can_export": g.can_export, "can_refresh": g.can_refresh}
         if hasattr(g, "can_design"):
             row["can_design"] = g.can_design
+        if hasattr(g, "can_publish"):
+            row["can_publish"] = g.can_publish
         return row
 
     def ds_grant(g: GrantDatasource) -> dict:
@@ -470,6 +473,8 @@ def import_metadata(s: Session, data: MetadataFile, actor: str) -> ImportResult:
             values = {"can_export": g.can_export, "can_refresh": g.can_refresh}
             if hasattr(model, "can_design"):
                 values["can_design"] = g.can_design
+            if hasattr(model, "can_publish"):
+                values["can_publish"] = g.can_publish
             imp.upsert(model, key, values,
                        f"{label} grant {g.target} -> {who}", **refs)
 

@@ -19,6 +19,7 @@ class DesignRights:
     is_admin: bool
     group_ids: frozenset[int]        # groups the user may design in (active groups only)
     datasource_ids: frozenset[int]   # datasources the user may query (active datasources only)
+    publish_group_ids: frozenset[int] = frozenset()
 
     @property
     def is_designer(self) -> bool:
@@ -28,11 +29,16 @@ class DesignRights:
 def design_rights(session: Session, user: User) -> DesignRights:
     """Computes the design rights of a user."""
     if not user.is_active:
-        return DesignRights(is_admin=False, group_ids=frozenset(), datasource_ids=frozenset())
+        return DesignRights(is_admin=False, group_ids=frozenset(), datasource_ids=frozenset(), publish_group_ids=frozenset())
     if user.is_admin:
         groups = session.scalars(select(ReportGroup.group_id).where(ReportGroup.is_active.is_(True))).all()
         datasources = session.scalars(select(Datasource.datasource_id).where(Datasource.is_active.is_(True))).all()
-        return DesignRights(is_admin=True, group_ids=frozenset(groups), datasource_ids=frozenset(datasources))
+        return DesignRights(
+            is_admin=True,
+            group_ids=frozenset(groups),
+            datasource_ids=frozenset(datasources),
+            publish_group_ids=frozenset(groups),
+        )
 
     p = principals_of(session, user)
     group_ids = session.scalars(
@@ -40,12 +46,27 @@ def design_rights(session: Session, user: User) -> DesignRights:
         .join(ReportGroup, ReportGroup.group_id == GrantGroup.group_id)
         .where(_principal_filter(GrantGroup, p), GrantGroup.can_design.is_(True), ReportGroup.is_active.is_(True))
     ).all()
+    publish_group_ids = session.scalars(
+        select(GrantGroup.group_id)
+        .join(ReportGroup, ReportGroup.group_id == GrantGroup.group_id)
+        .where(
+            _principal_filter(GrantGroup, p),
+            GrantGroup.can_design.is_(True),
+            GrantGroup.can_publish.is_(True),
+            ReportGroup.is_active.is_(True),
+        )
+    ).all()
     datasource_ids = session.scalars(
         select(GrantDatasource.datasource_id)
         .join(Datasource, Datasource.datasource_id == GrantDatasource.datasource_id)
         .where(_principal_filter(GrantDatasource, p), Datasource.is_active.is_(True))
     ).all()
-    return DesignRights(is_admin=False, group_ids=frozenset(group_ids), datasource_ids=frozenset(datasource_ids))
+    return DesignRights(
+        is_admin=False,
+        group_ids=frozenset(group_ids),
+        datasource_ids=frozenset(datasource_ids),
+        publish_group_ids=frozenset(publish_group_ids),
+    )
 
 
 def param_datasource_ids(session: Session, report_id: int) -> list[int]:

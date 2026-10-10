@@ -241,6 +241,12 @@ def refresh(database: Database, report_id: int, name: str, outcome) -> bool:
                 row.row_count = len(outcome.rows)
                 row.loaded_at = utcnow()
                 s.add(row)
-        return changed
     finally:
         cache.release_lock(database, report_id, LOCK_KEY, owner)
+    if changed:  # a new or replaced view: Superset's dataset and its access follow (self-service)
+        from drscore.bi import selfservice
+        from drscore.settings import get_settings
+
+        if selfservice.is_on(get_settings().app):
+            selfservice.schedule_sync(report_id)
+    return changed

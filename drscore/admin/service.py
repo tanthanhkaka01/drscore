@@ -253,10 +253,12 @@ def _principal(session: Session, username: str | None, role_code: str | None) ->
 
 def grant(session: Session, actor: str, kind: str, code: str, username: str | None = None,
           role_code: str | None = None, can_export: bool | None = None, can_refresh: bool | None = None,
-          can_design: bool | None = None):
+          can_design: bool | None = None, can_publish: bool | None = None):
     """Creates a grant, or updates the flags of the existing one for the same principal."""
     if can_design is not None and kind != "group":
         raise AdminError("The --design / --no-design option applies only to group grants.")
+    if can_publish is not None and kind != "group":
+        raise AdminError("The --publish / --no-publish option applies only to group grants.")
     if (can_export is not None or can_refresh is not None) and kind == "datasource":
         raise AdminError("The --export and --refresh options do not apply to datasource grants.")
     model, object_col, object_id = _target(session, kind, code)
@@ -286,6 +288,7 @@ def grant(session: Session, actor: str, kind: str, code: str, username: str | No
         }
         if kind == "group":
             kwargs["can_design"] = False if can_design is None else can_design
+            kwargs["can_publish"] = False if can_publish is None else can_publish
         existing = model(**kwargs)
         setattr(existing, object_col.key, object_id)
         session.add(existing)
@@ -293,16 +296,20 @@ def grant(session: Session, actor: str, kind: str, code: str, username: str | No
         before = {"can_export": existing.can_export, "can_refresh": existing.can_refresh}
         if kind == "group":
             before["can_design"] = existing.can_design
+            before["can_publish"] = existing.can_publish
         if can_export is not None:
             existing.can_export = can_export
         if can_refresh is not None:
             existing.can_refresh = can_refresh
         if can_design is not None and kind == "group":
             existing.can_design = can_design
+        if can_publish is not None and kind == "group":
+            existing.can_publish = can_publish
         existing.granted_by = actor
     after = {"can_export": existing.can_export, "can_refresh": existing.can_refresh}
     if kind == "group":
         after["can_design"] = existing.can_design
+        after["can_publish"] = existing.can_publish
     audit(session, actor, f"GRANT_{kind.upper()}", f"grant_{kind}", f"{code} -> {who}", before=before,
           after=after)
     return existing

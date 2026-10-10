@@ -240,14 +240,14 @@ def cmd_grant(args: argparse.Namespace) -> int:
     with _admin_session() as s:
         g = _admin_call(admin.grant, s, cli_actor(), args.kind, args.code, args.user, args.role,
                         getattr(args, "export", None), getattr(args, "refresh", None),
-                        getattr(args, "design", None))
+                        getattr(args, "design", None), getattr(args, "publish", None))
         who = f"user {args.user}" if args.user else f"role {args.role}"
         if args.kind == "datasource":
             print(f"Granted datasource {args.code} to {who}.")
         elif args.kind == "group":
             print(f"Granted group {args.code} to {who} "
                   f"(export: {'yes' if g.can_export else 'no'}, refresh: {'yes' if g.can_refresh else 'no'}, "
-                  f"design: {'yes' if g.can_design else 'no'}).")
+                  f"design: {'yes' if g.can_design else 'no'}, publish: {'yes' if g.can_publish else 'no'}).")
         else:
             print(f"Granted report {args.code} to {who} "
                   f"(export: {'yes' if g.can_export else 'no'}, refresh: {'yes' if g.can_refresh else 'no'}).")
@@ -285,11 +285,16 @@ def cmd_grant_show(args: argparse.Namespace) -> int:
             group_codes = sorted(s.scalars(select(ReportGroup.group_code).where(ReportGroup.group_id.in_(rights.group_ids))).all())
         else:
             group_codes = []
+        if rights.publish_group_ids:
+            publish_codes = sorted(s.scalars(select(ReportGroup.group_code).where(ReportGroup.group_id.in_(rights.publish_group_ids))).all())
+        else:
+            publish_codes = []
         if rights.datasource_ids:
             ds_codes = sorted(s.scalars(select(Datasource.datasource_code).where(Datasource.datasource_id.in_(rights.datasource_ids))).all())
         else:
             ds_codes = []
         print(f"Design groups: {', '.join(group_codes) or '-'}")
+        print(f"Publish groups: {', '.join(publish_codes) or '-'}")
         print(f"Datasources: {', '.join(ds_codes) or '-'}")
     return 0
 
@@ -322,6 +327,48 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------------------------
+# bi sync
+
+def cmd_bi_sync(args: argparse.Namespace) -> int:
+    from sqlalchemy import select
+
+    from drscore.bi import selfservice
+    from drscore.db import get_database
+    from drscore.db.models import Report, ReportGroup
+    from drscore.settings import get_settings
+
+    database = get_database()
+    settings = get_settings()
+
+    if getattr(args, "report", None):
+        code = args.report
+        with database.session() as s:
+            r = s.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+            if r is None:
+                raise CommandError(f"No report {code!r}.")
+            report_id = r.report_id
+        outcome = selfservice.sync_report(database, settings, report_id)
+        print(outcome)
+    elif getattr(args, "group", None):
+        group_code = args.group
+        with database.session() as s:
+            g = s.scalars(select(ReportGroup).where(ReportGroup.group_code == group_code)).one_or_none()
+            if g is None:
+                raise CommandError(f"No group {group_code!r}.")
+        outcomes = selfservice.sync_group(database, settings, group_code)
+        for out in outcomes:
+            print(out)
+    else:
+        with database.session() as s:
+            groups = list(s.scalars(select(ReportGroup.group_code).where(ReportGroup.is_active.is_(True)).order_by(ReportGroup.sort_order, ReportGroup.group_code)))
+        for g_code in groups:
+            outcomes = selfservice.sync_group(database, settings, g_code)
+            for out in outcomes:
+                print(out)
+    return 0
+
+
+# --------------------------------------------------------------------------------------------
 # Parser
 
 def build_parser() -> argparse.ArgumentParser:
@@ -347,11 +394,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_user_parsers(sub)
     _add_role_parsers(sub)
     _add_grant_parsers(sub)
+    _add_bi_parsers(sub)
 
     from drscore.cli_reports import add_parsers
 
     add_parsers(sub)
     return parser
+
+
+def _add_bi_parsers(sub) -> None:
+    bi = sub.add_parser("bi", help="Superset BI integration").add_subparsers(dest="action", required=True)
+    p = bi.add_parser("sync", help="sync datasets and roles with Superset")
+    group = p.add_mutually_exclusive_group(required=False)
+    group.add_argument("--report", help="sync one report by code")
+    group.add_argument("--group", help="sync one group by code")
+    p.set_defaults(handler=cmd_bi_sync)
 
 
 def _password_option(p: argparse.ArgumentParser) -> None:
@@ -439,6 +496,8 @@ def _add_grant_parsers(sub) -> None:
         if kind == "group":
             p.add_argument("--design", dest="design", action="store_true", default=None)
             p.add_argument("--no-design", dest="design", action="store_false")
+            p.add_argument("--publish", dest="publish", action="store_true", default=None)
+            p.add_argument("--no-publish", dest="publish", action="store_false")
         p.set_defaults(handler=cmd_grant)
     p = grant.add_parser("show", help="the reports a user can view, and through which grant")
     p.add_argument("--user", required=True)

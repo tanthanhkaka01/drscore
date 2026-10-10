@@ -327,6 +327,17 @@ class ReportAdmin(AuditedView, model=Report):
         found = await run_in_threadpool(code) if pks else None
         return RedirectResponse(f"/reports/{found}", status_code=303) if found else _back(request, self.identity)
 
+    @action(name="open-in-superset", label=_("Open in Superset"), add_in_detail=True, add_in_list=True)
+    async def open_in_superset(self, request: Request) -> Response:
+        pks = _pks(request)
+
+        def code():
+            with self.database.session() as s:
+                report = s.get(Report, int(pks[0]))
+                return report.report_code if report else None
+        found = await run_in_threadpool(code) if pks else None
+        return RedirectResponse(f"/design/reports/{found}/superset", status_code=303) if found else _back(request, self.identity)
+
     @action(name="load-bi-dataset", label=_("Create BI table"), add_in_detail=True, add_in_list=True)
     async def load_bi_dataset(self, request: Request) -> Response:
         """Runs the report with its default parameters and writes the result to the table named in
@@ -644,6 +655,7 @@ class _GrantAdmin(AuditedView):
     column_labels = {"group": L("Group"), "report": L("Report"), "datasource": L("Datasource"),
                      "user": L("User"), "role": L("Role"),
                      "can_export": L("Can export"), "can_refresh": L("Can refresh"), "can_design": L("Can design"),
+                     "can_publish": L("Can publish"),
                      "granted_by": L("Granted by"), "granted_at": L("Granted at")}
 
     def object_key(self, obj):
@@ -662,9 +674,9 @@ class GrantGroupAdmin(_GrantAdmin, model=GrantGroup):
     name_plural = _("Group grants")
     icon = "fa-solid fa-key"
     column_list = [GrantGroup.group, GrantGroup.user, GrantGroup.role, GrantGroup.can_export, GrantGroup.can_refresh,
-                   GrantGroup.can_design, GrantGroup.granted_by, GrantGroup.granted_at]
+                   GrantGroup.can_design, GrantGroup.can_publish, GrantGroup.granted_by, GrantGroup.granted_at]
     form_columns = [GrantGroup.group, GrantGroup.user, GrantGroup.role, GrantGroup.can_export, GrantGroup.can_refresh,
-                    GrantGroup.can_design]
+                    GrantGroup.can_design, GrantGroup.can_publish]
 
 
 class GrantReportAdmin(_GrantAdmin, model=GrantReport):

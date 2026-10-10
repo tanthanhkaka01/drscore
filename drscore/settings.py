@@ -204,6 +204,18 @@ class SupersetSection(_Section):
     password_env: str = "DRS_SUPERSET_PASSWORD"
     guest_token_ttl_seconds: Positive = 300
     check_design: bool = True
+    self_service: bool = False
+    admin_username: str = ""
+    admin_password_env: str = "DRS_SUPERSET_ADMIN_PASSWORD"
+    database_name: str = "DRS"
+    design_role_prefix: str = "DRS_DESIGN_"
+
+    @property
+    def is_self_service(self) -> bool:
+        return bool(self.enabled and self.self_service and self.admin_username)
+
+    def admin_password(self) -> str | None:
+        return os.environ.get(self.admin_password_env)
 
 
 class BiSection(_Section):

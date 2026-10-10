@@ -94,6 +94,12 @@ def _warnings(database: Database, settings: Settings) -> list[str]:
                    "so signing in over plain http will not work.")
     if not resolve_path(app.designs.root).is_dir():
         out.append(f"WARNING: the designs folder {resolve_path(app.designs.root)} does not exist ([designs] root).")
+    sup = app.bi.superset
+    if sup.self_service:
+        if not sup.admin_username:
+            out.append("WARNING: [bi.superset] self_service = true but admin_username is empty.")
+        if not os.environ.get(sup.admin_password_env):
+            out.append(f"WARNING: [bi.superset] self_service = true but {sup.admin_password_env} is not set.")
     with database.session() as s:
         admins = s.scalar(select(func.count()).select_from(User).where(User.is_admin, User.is_active))
     if not admins:

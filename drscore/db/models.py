@@ -387,6 +387,7 @@ class GrantGroup(Base):
     can_export: Mapped[bool] = _bool(True)
     can_refresh: Mapped[bool] = _bool(False)
     can_design: Mapped[bool] = _bool(False)
+    can_publish: Mapped[bool] = _bool(False)
     granted_by: Mapped[str | None] = mapped_column(String(100))
     granted_at: Mapped[datetime] = _now()
 

@@ -171,6 +171,97 @@ The report's Dashboard tab now shows the dashboard. The user needs no Superset a
 server checks the user's permission on the report and asks Superset for a guest token limited to
 that one dashboard (`POST /api/reports/{code}/bi-token`, logged as `BI_TOKEN`).
 
+## Self-service (1.3.0)
+
+In DRS 1.3.0, after an administrator completes a one-time configuration, **the administrator does
+nothing per report**. A designer publishes a report, DRS drives Superset automatically via its
+REST API, the team's dashboard author designs the dashboard in Superset, and the designer attaches
+it to the report on the BI page (`/design/reports/{code}/bi`).
+
+### The five `[bi.superset]` keys
+Configure the self-service keys in `config/app.toml`:
+
+```toml
+[bi.superset]
+enabled = true
+base_url = "http://bi.example.local:8088"    # as the browser reaches Superset
+api_url = "http://bi.example.local:8088"     # as the DRS server reaches Superset
+username = "drs_service"                     # guest token service account
+password_env = "DRS_SUPERSET_PASSWORD"
+guest_token_ttl_seconds = 300
+check_design = true                          # verify the dashboard exists before showing it
+
+# Self-service keys (1.3.0):
+self_service = true                          # DRS makes datasets, roles and embedding in Superset
+admin_username = "admin"                     # a Superset account with the Admin role, for that
+admin_password_env = "DRS_SUPERSET_ADMIN_PASSWORD" # environment variable holding the admin password
+database_name = "DRS"                        # the Superset database connection over the bi schema
+design_role_prefix = "DRS_DESIGN_"           # one Superset role per report group: DRS_DESIGN_<GROUP_CODE>
+```
+
+Self-service is active when `enabled = true`, `self_service = true`, and `admin_username` is set,
+with the environment variable named by `admin_password_env` (`DRS_SUPERSET_ADMIN_PASSWORD`) defined.
+
+### Why DRS drives Superset with an admin account
+DRS signs in to Superset with an account having the **Admin** role (`admin_username` and
+`DRS_SUPERSET_ADMIN_PASSWORD`). Superset's REST API requires administrative privileges to:
+- Find or create the dataset `drs_bi.<table>` on the database connection named by `database_name`.
+- Refresh dataset columns (`PUT /api/v1/dataset/<id>/refresh`) after report query or column changes.
+- Create the group role `<design_role_prefix><GROUP_CODE>` (e.g. `DRS_DESIGN_SALES`) in Superset.
+- Grant `"datasource access on [<db>].[<table>](id:<n>)"` to `<design_role_prefix><GROUP_CODE>`
+  (and ensure it is in no other `DRS_DESIGN_` role; if a report moves groups, the permission moves too).
+- Enable embedding of a dashboard (`POST /api/v1/dashboard/<id>/embedded`) with allowed domains
+  set to the origin of `[app] base_url`.
+- Discover which dashboards use a dataset (`GET /api/v1/dataset/<id>/related_objects`).
+
+By contrast, the guest-token service account (`drs_service`) remains minimally privileged with only
+token issuance rights.
+
+### What DRS does automatically
+- Automatically names the BI dataset table `report_code.lower()` when a report is published or
+  approved (appending `_2`, `_3` if a name conflict exists).
+- Runs `prepare_dataset` in a background thread to execute the report with default parameters and
+  refresh the PostgreSQL view `drs_bi.<table>`.
+- Syncs with Superset: creates or finds the dataset, refreshes columns, and updates permissions in
+  the group's `DRS_DESIGN_<GROUP_CODE>` role.
+- Discovers dashboards built on the dataset and displays usability status on the BI page.
+- Enables dashboard embedding and links `bi_design_uri = superset:<uuid>` when the designer clicks
+  **Use for this report**.
+
+### One-time administrator setup
+1. **Database migration**: Run `python -m drscore db upgrade` (migration `0010_can_publish`).
+2. **Superset configuration**: Set the five `[bi.superset]` keys in `config/app.toml` and export
+   `DRS_SUPERSET_ADMIN_PASSWORD`.
+3. **Database connection in Superset**: Ensure a database connection named `database_name` (e.g. `DRS`)
+   exists in Superset connecting to PostgreSQL with read access to schema `drs_bi`.
+4. **Pre-create group design role**: Run:
+   ```bash
+   python -m drscore bi sync --group <GROUP_CODE>
+   ```
+   (e.g. `python -m drscore bi sync --group SALES`). This creates the role `DRS_DESIGN_<GROUP_CODE>`
+   in Superset before assigning it.
+5. **Create Superset dashboard designers**: In Superset (**Settings > List Users**), create users
+   with roles `Gamma` + `DRS_DESIGN_<GROUP_CODE>` (and Active).
+   > [!IMPORTANT]
+   > Never assign `Alpha` or `sql_lab` to dashboard designers. `DRS_Embedded` is the guest role,
+   > never for a person.
+6. **Configure DRS designer**: In DRS, grant the designer `--design` and `--publish` on the group,
+   plus the datasource grant:
+   ```bash
+   python -m drscore grant group SALES --user designer --design --publish
+   python -m drscore grant datasource SALES_DB --user designer
+   ```
+
+### Restricted reports and row filters
+- **Restricted reports** (`is_restricted = true`): Never placed into any `DRS_DESIGN_` role.
+  Restricted reports stay administrator-only in both DRS and Superset.
+- **Row filters**: Embedded mode in Superset currently does not support row filters. Reports with
+  row filters cannot have dashboards attached (the BI page displays the refusal).
+
+### PostgreSQL only
+Self-service is supported on **PostgreSQL** DRS databases only (which provide schema views in
+`drs_bi`). On SQLite installations, the BI page indicates that self-service is not available on SQLite.
+
 ## Link mode (any BI tool)
 
 `bi_design_uri = 'https://...'` shows that address in the Dashboard tab with an "Open in a new
@@ -218,3 +309,8 @@ Superset can also save a dashboard as PDF or image (Download menu).
 | The Dashboard tab shows `403 Forbidden: You don't have the permission to access the requested resource` | Superset compares the Referer of the frame with the dashboard's "allowed domains". They must hold the portal's address exactly (`http://localhost:8090`, no path). The portal sends its origin for that frame only (`referrerPolicy` in `report.js`); a browser extension that strips the Referer breaks it. |
 | A container cannot reach a server of the office network whose address starts with `172.17.` (time-out) | Docker's default bridge network is `172.17.0.0/16`: inside Docker such an address never leaves the machine. Move Docker off that range (Docker Engine settings: `"bip": "10.213.0.1/24"`, then restart Docker), or - without touching Docker - run a TCP relay on the host and name `host.docker.internal:<port>` in Superset's connection. |
 | The dashboard shows old numbers | The dataset table follows the report's retention: it is rewritten when the Dashboard tab is opened after `cache_ttl_seconds`, or by `python -m drscore cache warm --report CODE`. |
+| DRS shows `BI_ENGINE_UNAVAILABLE: the Superset admin password is not set` | The environment variable configured in `admin_password_env` (`DRS_SUPERSET_ADMIN_PASSWORD`) is not exported in the DRS process environment. |
+| The BI page says `dataset not made yet - run the report once` | The report has not been executed yet so its view in `drs_bi` does not exist. Open the report and click **Run**, or click **Sync now** on the BI page after running. |
+| Attaching a dashboard is refused: `Dashboard uses N other dataset(s)` | All charts in the dashboard must use only the report's dataset. Embedded guest tokens enforce `drs_snapshot_id` across every dataset in the dashboard. |
+| Attaching a dashboard is refused: row filters | Reports with row filters (`drs_report_row_filter`) cannot be embedded because guest tokens do not carry row rules for row filters. Remove the row filters or use grid/HTML views. |
+| The BI page says `not available on SQLite` | Self-service Superset integration is available on PostgreSQL DRS databases only (which provide schema views in `drs_bi`). |

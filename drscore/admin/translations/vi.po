@@ -228,6 +228,9 @@ msgstr "Được làm mới"
 msgid "Can design"
 msgstr "Được thiết kế"
 
+msgid "Can publish"
+msgstr "Được xuất bản"
+
 msgid "Check"
 msgstr "Kiểm tra"
 

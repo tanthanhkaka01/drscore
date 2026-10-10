@@ -103,12 +103,27 @@
               <td class="text-secondary">{{ r.group.group_name }}</td>
               <td class="text-secondary">{{ r.datasource.datasource_name if r.datasource else '' }}</td>
               <td>
-                <form method="post" action="/design/reports/{{ r.report_code }}/edit" class="m-0">
-                  <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
-                  <button type="submit" class="btn btn-sm btn-outline-primary">
-                    <i class="ti ti-edit me-1"></i>{{ t('design.propose_change') }}
-                  </button>
-                </form>
+                <div class="btn-list flex-nowrap">
+                  <form method="post" action="/design/reports/{{ r.report_code }}/edit" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                      <i class="ti ti-edit me-1"></i>{{ t('design.propose_change') }}
+                    </button>
+                  </form>
+                  {% if self_service_on %}
+                  <a href="/design/reports/{{ r.report_code }}/bi" class="btn btn-sm btn-outline-secondary">
+                    <i class="ti ti-settings me-1"></i>{{ t('design.dashboard') }}
+                  </a>
+                  <a href="/design/reports/{{ r.report_code }}/superset" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener noreferrer">
+                    <i class="ti ti-external-link me-1"></i>{{ t('design.open_in_superset') }}
+                  </a>
+                  {% if r.bi_design_uri %}
+                  <a href="/design/reports/{{ r.report_code }}/superset/dashboard" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener noreferrer">
+                    <i class="ti ti-chart-pie me-1"></i>{{ t('design.dashboard_in_superset') }}
+                  </a>
+                  {% endif %}
+                  {% endif %}
+                </div>
               </td>
             </tr>
             {% endfor %}

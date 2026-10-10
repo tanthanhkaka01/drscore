@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from drscore.authz.design import design_rights
+from drscore.authz.design import can_edit_report, design_rights, param_datasource_ids, DesignRights
+from drscore.bi import selfservice
 from drscore.db import get_database
-from drscore.db.models import COLUMN_DATA_TYPES, Datasource, ReportGroup, User
+from drscore.db.models import BiDataset, COLUMN_DATA_TYPES, Datasource, Report, ReportDraft, ReportGroup, User
 from drscore.design import service as design_service
 from drscore.design.content import content_hash
 from drscore.errors import DRSError
@@ -53,6 +56,19 @@ def _parse_advanced(raw: str) -> dict[str, Any]:
         if values.get(key) is not None and not isinstance(values[key], str):
             values[key] = str(values[key])
     return values
+
+
+def _can_publish(session: Session, rights: DesignRights, draft: ReportDraft) -> bool:
+    content = draft.content_json or {}
+    group_code = content.get("group")
+    group = session.scalars(select(ReportGroup).where(ReportGroup.group_code == group_code)).one_or_none()
+    if group is None or not group.is_active or group.group_id not in rights.publish_group_ids:
+        return False
+    if draft.report_id is not None:
+        existing_report = session.get(Report, draft.report_id)
+        if existing_report is None or existing_report.group_id not in rights.publish_group_ids:
+            return False
+    return True
 
 
 def _parse_editor_form(form: Any) -> tuple[str, dict[str, Any], dict[str, str]]:
@@ -200,9 +216,11 @@ def list_drafts(request: Request, user: User = Depends(current_user), session: S
     drafts = design_service.list_drafts(session, user)
     editable_reps = design_service.editable_reports(session, user)
     msg = request.query_params.get("msg")
+    self_service_on = selfservice.is_on(get_settings().app)
     return render(
         request, "design_list.html",
         drafts=drafts, editable_reports=editable_reps, is_admin=user.is_admin, msg=msg,
+        self_service_on=self_service_on,
     )
 
 
@@ -312,12 +330,28 @@ def view_draft(draft_id: int, request: Request, user: User = Depends(current_use
     current_hash = content_hash(draft.report_code, draft.content_json)
     is_tested = bool(draft.tested_hash and draft.tested_hash == current_hash)
 
+    can_publish = False
+    has_dashboard = False
+    can_edit = False
+    if draft.author == user.username and draft.status == "DRAFT":
+        can_publish = _can_publish(session, rights, draft)
+
+    if draft.report_id is not None:
+        rep = session.get(Report, draft.report_id)
+        if rep is not None:
+            can_edit = can_edit_report(rights, rep, param_datasource_ids(session, rep.report_id))
+            has_dashboard = bool(rep.bi_design_uri)
+
+    self_service_on = selfservice.is_on(get_settings().app)
+
     return render(
         request, "design_edit.html", advanced=_advanced_json,
         is_new=False, is_editor=is_editor, draft=draft, code=draft.report_code,
         content=draft.content_json, groups=groups, datasources=datasources,
         errors={}, test_result=None, test_params={},
         diff=diff, msg=msg, is_tested=is_tested,
+        can_publish=can_publish, self_service_on=self_service_on,
+        has_dashboard=has_dashboard, can_edit=can_edit,
     )
 
 
@@ -363,12 +397,23 @@ async def update_draft(draft_id: int, request: Request, user: User = Depends(cur
             draft = design_service.get_draft(session, user, draft_id)
             current_hash = content_hash(draft.report_code, draft.content_json)
             is_tested = bool(draft.tested_hash and draft.tested_hash == current_hash)
+            can_publish = (draft.author == user.username and draft.status == "DRAFT" and _can_publish(session, rights, draft))
+            has_dashboard = False
+            can_edit = False
+            if draft.report_id is not None:
+                rep = session.get(Report, draft.report_id)
+                if rep is not None:
+                    can_edit = can_edit_report(rights, rep, param_datasource_ids(session, rep.report_id))
+                    has_dashboard = bool(rep.bi_design_uri)
+            self_service_on = selfservice.is_on(get_settings().app)
+
             return render(
                 request, "design_edit.html", advanced=_advanced_json, status_code=200,
                 is_new=False, is_editor=True, draft=draft, code=draft.report_code,
                 content=draft.content_json, groups=groups, datasources=datasources,
                 errors={}, test_result=test_result, test_params=_test_params_display(form),
-                is_tested=is_tested,
+                is_tested=is_tested, can_publish=can_publish, self_service_on=self_service_on,
+                has_dashboard=has_dashboard, can_edit=can_edit,
             )
 
         elif action == "columns_from_test":
@@ -415,13 +460,23 @@ async def update_draft(draft_id: int, request: Request, user: User = Depends(cur
         if exc.code == "DRAFT_INVALID":
             current_hash = content_hash(code, content)
             is_tested = bool(draft.tested_hash and draft.tested_hash == current_hash)
+            can_publish = (draft.author == user.username and draft.status == "DRAFT" and _can_publish(session, rights, draft))
+            has_dashboard = False
+            can_edit = False
+            if draft.report_id is not None:
+                rep = session.get(Report, draft.report_id)
+                if rep is not None:
+                    can_edit = can_edit_report(rights, rep, param_datasource_ids(session, rep.report_id))
+                    has_dashboard = bool(rep.bi_design_uri)
+            self_service_on = selfservice.is_on(get_settings().app)
             return render(
                 request, "design_edit.html", advanced=_advanced_json, status_code=422,
                 is_new=False, is_editor=True, draft=draft, code=code,
                 content=content, groups=groups, datasources=datasources,
                 errors=exc.detail if isinstance(exc.detail, dict) else {"general": str(exc.detail or exc.message)},
                 test_result=None, test_params=_test_params_display(form),
-                is_tested=is_tested,
+                is_tested=is_tested, can_publish=can_publish, self_service_on=self_service_on,
+                has_dashboard=has_dashboard, can_edit=can_edit,
             )
         raise
 
@@ -459,16 +514,57 @@ def delete_draft(draft_id: int, request: Request, user: User = Depends(current_u
     return RedirectResponse("/design?msg=deleted", status_code=303)
 
 
+@router.post("/design/drafts/{draft_id}/publish")
+async def publish_draft(draft_id: int, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    draft = session.get(ReportDraft, draft_id)
+    if draft is None:
+        raise DRSError("DRAFT_NOT_FOUND")
+    report_code = draft.report_code
+
+    form = await request.form()
+    note = str(form.get("note", "")).strip() or None
+    design_service.publish_draft(session, user, draft_id, get_settings().app, note=note)
+    session.commit()
+
+    database = get_database()
+    settings = get_settings().app
+    threading.Thread(
+        target=selfservice.prepare_dataset,
+        args=(database, settings, report_code, user.username),
+        daemon=True,
+    ).start()
+
+    return RedirectResponse(f"/design/drafts/{draft_id}?msg=published", status_code=303)
+
+
 @router.post("/design/drafts/{draft_id}/approve")
 async def approve_draft(draft_id: int, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
     rights = design_rights(session, user)
     if not rights.is_designer:
         raise DRSError("DESIGN_FORBIDDEN")
 
+    draft = session.get(ReportDraft, draft_id)
+    if draft is None:
+        raise DRSError("DRAFT_NOT_FOUND")
+    report_code = draft.report_code
+
     form = await request.form()
     note = str(form.get("note", "")).strip() or None
     design_service.approve_draft(session, user, draft_id, note, get_settings().app)
     session.commit()
+
+    database = get_database()
+    settings = get_settings().app
+    threading.Thread(
+        target=selfservice.prepare_dataset,
+        args=(database, settings, report_code, user.username),
+        daemon=True,
+    ).start()
+
     return RedirectResponse(f"/design/drafts/{draft_id}?msg=approved", status_code=303)
 
 
@@ -483,3 +579,164 @@ async def reject_draft(draft_id: int, request: Request, user: User = Depends(cur
     design_service.reject_draft(session, user, draft_id, note)
     session.commit()
     return RedirectResponse(f"/design/drafts/{draft_id}?msg=rejected", status_code=303)
+
+
+@router.get("/design/reports/{code}/bi")
+def report_bi(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    report = session.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+    if report is None:
+        raise DRSError("REPORT_NOT_FOUND")
+
+    if not can_edit_report(rights, report, param_datasource_ids(session, report.report_id)):
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    can_publish = (report.group_id in rights.publish_group_ids)
+    database = get_database()
+    settings = get_settings().app
+    self_service_on = selfservice.is_on(settings)
+    bi_dataset_ready = session.get(BiDataset, report.report_id) is not None
+
+    bi_info = None
+    superset_error = None
+    if self_service_on:
+        try:
+            bi_info = selfservice.report_dashboards(database, settings, code)
+        except DRSError as exc:
+            if exc.code == "BI_ENGINE_UNAVAILABLE":
+                superset_error = f"{exc.message}: {exc.admin_detail}" if (user.is_admin and exc.admin_detail) else exc.message
+            else:
+                raise
+
+    msg = request.query_params.get("msg")
+    sync_outcome = request.query_params.get("sync_outcome")
+    return render(
+        request, "design_bi.html",
+        code=code, report=report, can_publish=can_publish, self_service_on=self_service_on,
+        bi_dataset_ready=bi_dataset_ready, bi_info=bi_info, superset_error=superset_error,
+        msg=msg, sync_outcome=sync_outcome,
+    )
+
+
+@router.post("/design/reports/{code}/bi/link")
+async def link_report_dashboard(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    form = await request.form()
+    try:
+        dashboard_id = int(str(form.get("dashboard_id", "")))
+    except (ValueError, TypeError):
+        raise DRSError("PARAM_INVALID")
+
+    database = get_database()
+    settings = get_settings().app
+    try:
+        selfservice.link_dashboard(database, settings, user, code, dashboard_id)
+    except DRSError as exc:  # a refusal the designer can act on: say why on the BI page
+        if exc.code == "BI_ENGINE_UNAVAILABLE":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=bi_unavailable", status_code=303)
+        if exc.code == "DRAFT_INVALID" and isinstance(exc.detail, dict) and exc.detail.get("reason"):
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=link_{exc.detail['reason']}", status_code=303)
+        raise
+    session.commit()
+    return RedirectResponse(f"/design/reports/{code}/bi?msg=linked", status_code=303)
+
+
+@router.post("/design/reports/{code}/bi/unlink")
+def unlink_report_dashboard(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    database = get_database()
+    settings = get_settings().app
+    selfservice.unlink_dashboard(database, settings, user, code)
+    session.commit()
+    return RedirectResponse(f"/design/reports/{code}/bi?msg=unlinked", status_code=303)
+
+
+@router.post("/design/reports/{code}/bi/sync")
+def sync_report_bi(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    report = session.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+    if report is None:
+        raise DRSError("REPORT_NOT_FOUND")
+
+    if not can_edit_report(rights, report, param_datasource_ids(session, report.report_id)):
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    if report.group_id not in rights.publish_group_ids:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    database = get_database()
+    settings = get_settings().app
+    try:
+        outcome = selfservice.sync_report(database, settings, report.report_id)
+        session.commit()
+        return RedirectResponse(f"/design/reports/{code}/bi?sync_outcome={quote(outcome)}", status_code=303)
+    except DRSError as exc:
+        if exc.code == "BI_ENGINE_UNAVAILABLE":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=bi_unavailable", status_code=303)
+        raise
+
+
+@router.get("/design/reports/{code}/superset")
+def redirect_superset_explore(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    report = session.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+    if report is None:
+        raise DRSError("REPORT_NOT_FOUND")
+
+    if not can_edit_report(rights, report, param_datasource_ids(session, report.report_id)):
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    database = get_database()
+    settings = get_settings().app
+    try:
+        urls = selfservice.superset_urls(database, settings, code)
+        explore_url = urls.get("explore")
+        if explore_url:
+            return RedirectResponse(explore_url, status_code=303)
+        return RedirectResponse(f"/design/reports/{code}/bi?msg=dataset_not_ready", status_code=303)
+    except DRSError as exc:
+        if exc.code == "BI_ENGINE_UNAVAILABLE":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=bi_unavailable", status_code=303)
+        raise
+
+
+@router.get("/design/reports/{code}/superset/dashboard")
+def redirect_superset_dashboard(code: str, request: Request, user: User = Depends(current_user), session: Session = Depends(db_session)):
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    report = session.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+    if report is None:
+        raise DRSError("REPORT_NOT_FOUND")
+
+    if not can_edit_report(rights, report, param_datasource_ids(session, report.report_id)):
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    database = get_database()
+    settings = get_settings().app
+    try:
+        urls = selfservice.superset_urls(database, settings, code)
+        dash_url = urls.get("dashboard")
+        if dash_url:
+            return RedirectResponse(dash_url, status_code=303)
+        return RedirectResponse(f"/design/reports/{code}/bi?msg=no_dashboard", status_code=303)
+    except DRSError as exc:
+        if exc.code == "BI_ENGINE_UNAVAILABLE":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=bi_unavailable", status_code=303)
+        raise

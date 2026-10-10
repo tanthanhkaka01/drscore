@@ -70,8 +70,23 @@ def report_page(code: str, request: Request, user: User = Depends(current_user))
         "messages": client_messages(locale, ("report.", "grid.", "error.")),
         "locale": locale,
     }
+
+    from drscore.authz.design import can_edit_report, design_rights, param_datasource_ids
+    from drscore.bi import selfservice
+    from drscore.db.models import Report
+    from sqlalchemy import select
+
+    with database.session() as s:
+        rep = s.scalars(select(Report).where(Report.report_code == code)).one_or_none()
+        rights = design_rights(s, user)
+        can_edit = can_edit_report(rights, rep, param_datasource_ids(s, rep.report_id)) if rep else False
+        has_dashboard = bool(rep and rep.bi_design_uri)
+
+    self_service_on = selfservice.is_on(settings)
+
     response = render(request, "report.html", definition=definition, page_data=page_data, bi=bi,
-                      is_admin=user.is_admin,
+                      is_admin=user.is_admin, can_edit=can_edit, self_service_on=self_service_on,
+                      has_dashboard=has_dashboard,
                       active_report=code, active_group=definition.report.group)
     if bi:
         # The dashboard's server (the linked BI tool, or Superset) is the only other origin the page

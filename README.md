@@ -114,8 +114,10 @@ Everything can be done without SQL on the admin pages (`/admin/`, administrators
 SQLite move to PostgreSQL with `metadata export` / `metadata import`.
 
 DRS 1.2.0 adds a **report designer** role (`/design`, see `docs/designer-guide.md`): authorized
-users can draft new reports, test SQL queries, and propose changes, which administrators review
-and approve before live tables are updated.
+users can draft new reports, test SQL queries, and propose changes. DRS 1.3.0 adds **self-service
+publishing** (`can_publish` on group grants allows direct publishing without approval) and
+**self-service BI** (automatic Superset datasets, group roles, and dashboard embedding via the BI
+page `/design/reports/{code}/bi`, see `docs/superset-setup.md`).
 
 ## Report sources
 
@@ -187,8 +189,9 @@ database without an administrator the default one (`admin` / `admin`, to be chan
 sign-in), checks the set-up (secret key, HTTPS cookie, administrator) and starts `[app] workers`
 processes.
 
-Upgrading an existing installation to 1.2.0 needs `python -m drscore db upgrade` (migration 0009
-adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`).
+Upgrading an existing installation to 1.3.0 needs `python -m drscore db upgrade` (migration 0009
+adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`; migration 0010
+adds `drs_grant_group.can_publish`).
 
 ## Requirements
 
@@ -268,9 +271,10 @@ run uses a throw-away schema, dropped at the end. Use a test database, never a p
 | `python -m drscore user list / disable / enable / set-password / set-admin [--off]` | Users |
 | `python -m drscore user attr set USER NAME VALUE... / remove USER NAME [VALUE] / list USER` | Row-filter attributes (`*` = every value) |
 | `python -m drscore role add CODE [--name N] / list / member add CODE USER / member remove CODE USER` | Roles |
-| `python -m drscore grant group CODE [--design] / grant report CODE / grant datasource CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
+| `python -m drscore grant group CODE [--design] [--publish] / grant report CODE / grant datasource CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |
 | `python -m drscore revoke group CODE / revoke report CODE / revoke datasource CODE --user U \| --role R` | Remove a grant |
 | `python -m drscore grant show --user U` | What a user can see, design rights, and through which grant |
+| `python -m drscore bi sync [--report CODE \| --group CODE]` | Sync datasets and roles with Superset |
 
 The first administrator is made by `serve`: a DRS database without an administrator gets user
 `admin` with the password `admin`. That password opens only the account page, where it must be

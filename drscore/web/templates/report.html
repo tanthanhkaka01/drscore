@@ -7,6 +7,37 @@
 <h2 class="page-title">{{ r.name }}</h2>
 {% if r.description %}<div class="text-secondary mt-1">{{ r.description }}</div>{% endif %}
 {% endblock %}
+{% block header_actions %}
+{% if can_edit %}
+<div class="dropdown">
+  <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <i class="ti ti-pencil me-1"></i>{{ t('design.menu_title') }}
+  </button>
+  <div class="dropdown-menu dropdown-menu-end">
+    <form method="post" action="/design/reports/{{ r.code }}/edit" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+      <button type="submit" class="dropdown-item">
+        <i class="ti ti-edit me-2"></i>{{ t('design.propose_change') }}
+      </button>
+    </form>
+    {% if self_service_on %}
+    <div class="dropdown-divider"></div>
+    <a class="dropdown-item" href="/design/reports/{{ r.code }}/bi">
+      <i class="ti ti-settings me-2"></i>{{ t('design.bi_settings') }}
+    </a>
+    <a class="dropdown-item" href="/design/reports/{{ r.code }}/superset" target="_blank" rel="noopener noreferrer">
+      <i class="ti ti-external-link me-2"></i>{{ t('design.open_in_superset') }}
+    </a>
+    {% if has_dashboard %}
+    <a class="dropdown-item" href="/design/reports/{{ r.code }}/superset/dashboard" target="_blank" rel="noopener noreferrer">
+      <i class="ti ti-chart-pie me-2"></i>{{ t('design.dashboard_in_superset') }}
+    </a>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
 {% block content %}
 {% from "_param_options.html" import option_list %}
 <script type="application/json" id="page-data">{{ page_data | tojson }}</script>

@@ -461,23 +461,14 @@ def delete_draft(session: Session, user: User, draft_id: int) -> None:
     session.delete(draft)
 
 
-def approve_draft(
+def _apply_draft(
     session: Session,
-    admin: User,
-    draft_id: int,
+    draft: ReportDraft,
+    actor: str,
     note: str | None,
     settings: AppSettings,
-) -> list[tuple[str, str]]:
-    """Approves a PENDING draft and applies it to the live report tables."""
-    if not admin.is_admin:
-        raise DRSError("DESIGN_FORBIDDEN")
-
-    draft = session.get(ReportDraft, draft_id)
-    if draft is None:
-        raise DRSError("DRAFT_NOT_FOUND")
-    if draft.status != "PENDING":
-        raise DRSError("DRAFT_STATE", detail="Only PENDING drafts can be approved.")
-
+) -> Report:
+    """Applies a draft definition to the live report tables."""
     content = draft.content_json
     errors = validate_content(draft.report_code, content)
     if errors:
@@ -498,12 +489,32 @@ def approve_draft(
             if opt_ds is None or not opt_ds.is_active:
                 raise DRSError("DRAFT_INVALID", detail={f"params.{i}.options_datasource": f"Datasource {opt_code} is missing or inactive."})
 
+    from drscore.bi import selfservice
+
+    self_service_on = selfservice.is_on(settings)
+
+    def _auto_bi_table(report_id: int | None = None) -> str:
+        base = draft.report_code.lower()
+        query = select(Report.bi_dataset_table).where(Report.bi_dataset_table.is_not(None))
+        if report_id is not None:
+            query = query.where(Report.report_id != report_id)
+        existing = set(session.scalars(query).all())
+        candidate = base
+        if candidate not in existing:
+            return candidate
+        idx = 2
+        while f"{base}_{idx}" in existing:
+            idx += 1
+        return f"{base}_{idx}"
+
+    old_group_id = None
     if draft.report_id is None:
         # New report
         live = session.scalars(select(Report).where(Report.report_code == draft.report_code)).first()
         if live is not None:
             raise DRSError("DRAFT_INVALID", detail={"report_code": f"Report {draft.report_code} already exists."})
 
+        bi_table = _auto_bi_table() if self_service_on else None
         report = Report(
             report_code=draft.report_code,
             report_name=content["report_name"],
@@ -513,18 +524,20 @@ def approve_draft(
             query_text=content["query_text"],
             cache_ttl_seconds=content.get("cache_ttl_seconds", 0),
             report_type="GRID",
+            bi_dataset_table=bi_table,
             created_by=draft.author,
-            updated_by=admin.username,
+            updated_by=actor,
         )
         session.add(report)
         session.flush()
         draft.report_id = report.report_id
-        audit(session, admin.username, "CREATE", "drs_report", report.report_code, after=row_snapshot(report))
+        audit(session, actor, "CREATE", "drs_report", report.report_code, after=row_snapshot(report))
     else:
         # Existing report change
         report = session.get(Report, draft.report_id)
         if report is None:
             raise DRSError("REPORT_NOT_FOUND")
+        old_group_id = report.group_id
         before_snap = row_snapshot(report)
         report.report_name = content["report_name"]
         report.description = content.get("description")
@@ -532,9 +545,11 @@ def approve_draft(
         report.datasource_id = ds.datasource_id
         report.query_text = content["query_text"]
         report.cache_ttl_seconds = content.get("cache_ttl_seconds", 0)
-        report.updated_by = admin.username
+        report.updated_by = actor
+        if self_service_on and not report.bi_dataset_table:
+            report.bi_dataset_table = _auto_bi_table(report.report_id)
         session.flush()
-        audit(session, admin.username, "UPDATE", "drs_report", report.report_code, before=before_snap, after=row_snapshot(report))
+        audit(session, actor, "UPDATE", "drs_report", report.report_code, before=before_snap, after=row_snapshot(report))
 
     # Params sync
     new_param_names = [p["param_name"] for p in content.get("params", [])]
@@ -603,6 +618,33 @@ def approve_draft(
         existing_c.sort_order = idx
     session.flush()
 
+    if old_group_id is not None and old_group_id != report.group_id and self_service_on:
+        from drscore.bi import selfservice
+        selfservice.schedule_sync(report.report_id)
+
+    return report
+
+
+def approve_draft(
+    session: Session,
+    admin: User,
+    draft_id: int,
+    note: str | None,
+    settings: AppSettings,
+) -> list[tuple[str, str]]:
+    """Approves a PENDING draft and applies it to the live report tables."""
+    if not admin.is_admin:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    draft = session.get(ReportDraft, draft_id)
+    if draft is None:
+        raise DRSError("DRAFT_NOT_FOUND")
+    if draft.status != "PENDING":
+        raise DRSError("DRAFT_STATE", detail="Only PENDING drafts can be approved.")
+
+    content = draft.content_json
+    report = _apply_draft(session, draft, actor=admin.username, note=note, settings=settings)
+
     draft.status = "APPROVED"
     draft.reviewed_by = admin.username
     draft.reviewed_at = utcnow()
@@ -614,6 +656,59 @@ def approve_draft(
         "drs_report_draft",
         f"{draft.report_code}#{draft.draft_id}",
         after={"reviewed_by": admin.username, "review_note": note, "content": content},
+    )
+
+    findings = check_report(session, report, settings)
+    return findings
+
+
+def publish_draft(
+    session: Session,
+    user: User,
+    draft_id: int,
+    settings: AppSettings,
+    note: str | None = None,
+) -> list[tuple[str, str]]:
+    """Publishes a tested draft directly to the live report tables (author with publish right)."""
+    draft = session.get(ReportDraft, draft_id)
+    if draft is None:
+        raise DRSError("DRAFT_NOT_FOUND")
+    if draft.author != user.username:
+        raise DRSError("DESIGN_FORBIDDEN")
+    if draft.status != "DRAFT":
+        raise DRSError("DRAFT_STATE", detail="Only drafts in DRAFT status can be published.")
+
+    current_hash = content_hash(draft.report_code, draft.content_json)
+    if draft.tested_hash != current_hash:
+        raise DRSError("DRAFT_STATE", detail="run a successful test after the last change")
+
+    rights = design_rights(session, user)
+    content = draft.content_json
+
+    group = session.scalars(select(ReportGroup).where(ReportGroup.group_code == content.get("group"))).one_or_none()
+    if group is None or not group.is_active or group.group_id not in rights.publish_group_ids:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    if draft.report_id is not None:
+        existing_report = session.get(Report, draft.report_id)
+        if existing_report is None or existing_report.group_id not in rights.publish_group_ids:
+            raise DRSError("DESIGN_FORBIDDEN")
+
+    require_content_rights(session, rights, content)
+
+    report = _apply_draft(session, draft, actor=user.username, note=note, settings=settings)
+
+    draft.status = "APPROVED"
+    draft.reviewed_by = user.username
+    draft.reviewed_at = utcnow()
+    draft.review_note = note
+    audit(
+        session,
+        user.username,
+        "DRAFT_PUBLISH",
+        "drs_report_draft",
+        f"{draft.report_code}#{draft.draft_id}",
+        after={"reviewed_by": user.username, "review_note": note, "content": content},
     )
 
     findings = check_report(session, report, settings)

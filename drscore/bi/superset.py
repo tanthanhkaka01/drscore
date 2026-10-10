@@ -118,3 +118,12 @@ def dashboard_exists(cfg: SupersetSection, dashboard_uuid: str) -> bool:
     with _checks_lock:
         _checks[dashboard_uuid] = (now, exists)
     return exists
+
+
+def clear_dashboard_cache(dashboard_uuid: str | None = None) -> None:
+    """Clears the 60-second existence cache for a dashboard (or all dashboards if None)."""
+    with _checks_lock:
+        if dashboard_uuid is None:
+            _checks.clear()
+        else:
+            _checks.pop(dashboard_uuid, None)

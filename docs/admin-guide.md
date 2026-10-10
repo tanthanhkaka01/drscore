@@ -12,9 +12,9 @@ user menu.
 
 | Menu | Pages | Extra buttons |
 | --- | --- | --- |
-| Reports | report groups, reports, parameters, grid columns, row filters | report: **Test run** (runs it now with the default parameters, as you, and shows the row count or the error; it cannot choose a value, so for a required parameter without a default it says so), **Open report** (to the report's own page, where the parameters are chosen), **Check** (the findings of `report validate`), **Create BI table** (runs it with the default parameters so that the dataset named in "BI dataset table" exists and a Superset dashboard can be designed on it - what `cache warm --report CODE` does; any run of the report from its own page does it too) |
+| Reports | report groups, reports, parameters, grid columns, row filters | report: **Test run** (runs it now with the default parameters, as you, and shows the row count or the error; it cannot choose a value, so for a required parameter without a default it says so), **Open report** (to the report's own page, where the parameters are chosen), **Check** (the findings of `report validate`), **Create BI table** (runs it with the default parameters so that the dataset named in "BI dataset table" exists and a Superset dashboard can be designed on it - what `cache warm --report CODE` does; any run of the report from its own page does it too), **Open in Superset** (opens the report's dataset in Superset) |
 | Datasources | every connection setting, "New password" (stored encrypted, never shown) | **Test connection** |
-| Users and access | users ("New password", ends their sessions; "Must change password": the user's next sign-in opens only the account page until they have chosen a new one), user attributes, roles and members, group grants ("Can design"), report grants, datasource grants | user: **Unlock** (after too many wrong passwords) |
+| Users and access | users ("New password", ends their sessions; "Must change password": the user's next sign-in opens only the account page until they have chosen a new one), user attributes, roles and members, group grants ("Can design", "Can publish"), report grants, datasource grants | user: **Unlock** (after too many wrong passwords) |
 | Logs | access log (who opened / ran / exported what), audit log (every change), snapshot history | read-only |
 
 Every save is checked like the CLI checks it (codes, parameter names, default-value tokens, grid
@@ -28,27 +28,34 @@ Security: only users with `is_admin` get in (others get 403, a signed-out visito
 of the same site (Origin / Referer check) is refused with 403, so another site cannot drive an
 administrator's browser.
 
-## Report designers and approvals
+## Report designers, publishing, and Superset self-service
 
 In DRS 1.2.0, non-admin users can be given the **report designer** role to compose, test, and
-propose reports in their own drafts table (`drs_report_draft`). Administrators review and approve
-every proposal before it reaches live reports. For the complete workflow, see the
-[Report designer guide](designer-guide.md).
+propose reports in their own drafts table (`drs_report_draft`). In DRS 1.3.0, designers with the
+**Can publish** grant can publish reports directly to live tables without administrator approval,
+and manage Superset BI datasets and dashboards via the self-service BI page (`/design/reports/{code}/bi`).
+For the complete workflow, see the [Report designer guide](designer-guide.md) and
+[Superset setup guide](superset-setup.md).
 
-Upgrading an existing database to 1.2.0 requires `python -m drscore db upgrade` (migration 0009
-adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`).
+Upgrading an existing database to 1.3.0 requires `python -m drscore db upgrade`:
+- Migration `0009_report_designer`: adds `drs_grant_group.can_design`, `drs_grant_datasource`, and `drs_report_draft`.
+- Migration `0010_can_publish`: adds `drs_grant_group.can_publish`.
 
-### Setting up a designer
+### Setting up a designer and publisher
 
 A user is recognized as a designer when they have:
 1. At least one group grant with **Can design** ticked (`drs_grant_group.can_design = true`).
 2. At least one datasource grant (`drs_grant_datasource`).
 
-Administrators always have full designer access. Designers see a **Report design** link (`/design`)
-in the portal menu; administrators also see a badge displaying the number of pending drafts awaiting review.
+To allow a designer to publish without administrator approval:
+3. Enable **Can publish** on the group grant (`drs_grant_group.can_publish = true`).
+
+Administrators always have full designer and publishing access. Designers see a **Report design** link
+(`/design`) in the portal menu; administrators also see a badge displaying the number of pending drafts awaiting review.
 
 **Admin UI**:
-- Under **Users and access > Group grants**, create or edit a group grant and check **Can design**.
+- Under **Users and access > Group grants**, create or edit a group grant. Check **Can design** to
+  allow drafting; check **Can publish** to allow direct publishing.
 - Under **Users and access > Datasource grants**, grant the target datasource to the user or role.
 
 **CLI**:
@@ -57,16 +64,27 @@ in the portal menu; administrators also see a badge displaying the number of pen
 python -m drscore grant datasource SALES_DB --user john
 python -m drscore grant datasource SALES_DB --role ANALYSTS
 
-# Grant a report group with design rights
+# Grant a report group with design rights (requires approval to publish)
 python -m drscore grant group SALES --user john --design
-python -m drscore grant group SALES --role ANALYSTS --design
+
+# Grant a report group with direct publishing rights (no approval needed)
+python -m drscore grant group SALES --user john --design --publish
+python -m drscore grant group SALES --role ANALYSTS --design --publish
+
+# Revoke publishing rights while keeping design rights
+python -m drscore grant group SALES --user john --no-publish
 
 # Revoke grants
 python -m drscore revoke datasource SALES_DB --user john
 python -m drscore revoke group SALES --user john
 
-# Inspect a user's visible reports and design rights
+# Inspect a user's visible reports, design rights, and publishing rights
 python -m drscore grant show --user john
+
+# Sync Superset datasets and roles (one group, one report, or all active groups)
+python -m drscore bi sync --group SALES
+python -m drscore bi sync --report MONTHLY_SALES
+python -m drscore bi sync
 ```
 
 ### Reviewing and approving drafts

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · {{ t('design.bi_page_title') }}{% endblock %}
+
+{% block header %}
+<div class="page-pretitle">{{ t('design.title') }}</div>
+<h2 class="page-title">
+  <code>{{ code }}</code> · {{ report.report_name }} · {{ t('design.bi_page_title') }}
+</h2>
+{% endblock %}
+
+{% block header_actions %}
+<div class="btn-list">
+  <a href="/reports/{{ code }}" class="btn btn-outline-secondary">
+    <i class="ti ti-file-analytics me-1"></i>{{ t('design.open_report') }}
+  </a>
+  <a href="/design" class="btn btn-outline-secondary">
+    <i class="ti ti-arrow-left me-1"></i>{{ t('design.back_to_list') }}
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if msg %}
+<div class="alert alert-success alert-dismissible mb-3" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-check me-2"></i></div>
+    <div>{{ t('design.msg_' ~ msg) }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if sync_outcome %}
+<div class="alert alert-info alert-dismissible mb-3" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-info-circle me-2"></i></div>
+    <div>{{ sync_outcome }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if superset_error %}
+<div class="alert alert-danger mb-3" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-alert-triangle me-2"></i></div>
+    <div>{{ superset_error }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if not self_service_on %}
+<div class="alert alert-warning mb-3" role="alert">
+  <div class="d-flex">
+    <div><i class="ti ti-alert-circle me-2"></i></div>
+    <div>{{ t('design.self_service_disabled') }}</div>
+  </div>
+</div>
+{% else %}
+
+<div class="row row-cards">
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title">{{ t('design.dataset_table') }}</h3>
+        {% if can_publish and bi_dataset_ready %}
+        <form method="post" action="/design/reports/{{ code }}/bi/sync" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="ti ti-refresh me-1"></i>{{ t('design.sync_now') }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="datagrid">
+          <div class="datagrid-item">
+            <div class="datagrid-title">{{ t('design.dataset_table') }}</div>
+            <div class="datagrid-content">
+              {% if report.bi_dataset_table %}
+              <code>{{ report.bi_dataset_table }}</code>
+              {% else %}
+              —
+              {% endif %}
+            </div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">{{ t('design.dashboard_status') }}</div>
+            <div class="datagrid-content">
+              {% if bi_dataset_ready and bi_info and bi_info.dataset_id %}
+              <span class="badge bg-success-lt me-2">{{ t('design.dataset_ready') }}</span>
+              <a href="{{ bi_info.explore_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary">
+                <i class="ti ti-external-link me-1"></i>{{ t('design.open_in_superset') }}
+              </a>
+              {% else %}
+              <span class="text-secondary">{{ t('design.dataset_not_made') }}</span>
+              <a href="/reports/{{ code }}" class="btn btn-sm btn-outline-secondary ms-2">
+                <i class="ti ti-player-play me-1"></i>{{ t('design.run_report_once') }}
+              </a>
+              {% endif %}
+            </div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">{{ t('design.required_role') }}</div>
+            <div class="datagrid-content">
+              {% if bi_info and bi_info.role %}
+              <code>{{ bi_info.role }}</code>
+              {% else %}
+              —
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title">{{ t('design.dashboard_title') }}</h3>
+      </div>
+      <div class="card-body">
+        <div class="datagrid mb-3">
+          <div class="datagrid-item">
+            <div class="datagrid-title">{{ t('design.dashboard_status') }}</div>
+            <div class="datagrid-content">
+              {% if bi_info and bi_info.linked_uuid %}
+              <div class="d-flex align-items-center gap-2">
+                <code>{{ bi_info.linked_uuid }}</code>
+                <a href="/design/reports/{{ code }}/superset/dashboard" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary">
+                  <i class="ti ti-external-link me-1"></i>{{ t('design.open_in_superset') }}
+                </a>
+                {% if can_publish %}
+                <form method="post" action="/design/reports/{{ code }}/bi/unlink" class="m-0">
+                  <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="ti ti-trash me-1"></i>{{ t('design.remove_dashboard') }}
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+              {% else %}
+              <span class="text-secondary">{{ t('design.no_dashboard_linked') }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if bi_info and bi_info.dashboards %}
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table table-striped table-sm">
+            <thead>
+              <tr>
+                <th>{{ t('design.dashboard_title') }}</th>
+                <th>{{ t('design.dashboard_status') }}</th>
+                <th class="w-1">{{ t('design.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in bi_info.dashboards %}
+              <tr>
+                <td>
+                  <a href="{{ d.url }}" target="_blank" rel="noopener noreferrer">
+                    <strong>{{ d.title }}</strong>
+                    <i class="ti ti-external-link ms-1 small"></i>
+                  </a>
+                </td>
+                <td>
+                  {% if d.usable %}
+                  <span class="badge bg-success">{{ t('design.dashboard_usable') }}</span>
+                  {% else %}
+                  <span class="badge bg-danger">{{ t('design.dashboard_unusable') }}</span>
+                  <small class="text-secondary ms-2">{{ d.reason }}</small>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if d.usable and can_publish %}
+                  <form method="post" action="/design/reports/{{ code }}/bi/link" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+                    <input type="hidden" name="dashboard_id" value="{{ d.id }}">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                      <i class="ti ti-link me-1"></i>{{ t('design.use_for_report') }}
+                    </button>
+                  </form>
+                  {% else %}
+                  —
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-secondary py-2">
+          {{ t('design.no_dashboards_found') }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

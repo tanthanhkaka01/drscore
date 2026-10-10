@@ -42,6 +42,20 @@
       </button>
     </form>
     {% endif %}
+
+    {% if self_service_on and draft and draft.report_id and can_edit %}
+    <a href="/design/reports/{{ code }}/superset" class="btn btn-outline-secondary" target="_blank" rel="noopener noreferrer">
+      <i class="ti ti-external-link me-1"></i>{{ t('design.open_in_superset') }}
+    </a>
+    {% if has_dashboard %}
+    <a href="/design/reports/{{ code }}/superset/dashboard" class="btn btn-outline-secondary" target="_blank" rel="noopener noreferrer">
+      <i class="ti ti-chart-pie me-1"></i>{{ t('design.dashboard_in_superset') }}
+    </a>
+    {% endif %}
+    <a href="/design/reports/{{ code }}/bi" class="btn btn-outline-secondary">
+      <i class="ti ti-settings me-1"></i>{{ t('design.bi_settings') }}
+    </a>
+    {% endif %}
   {% endif %}
 
   <a href="/design" class="btn btn-outline-secondary">
@@ -679,14 +693,22 @@
   </div>
 </form>
 
-{% if not is_new and draft %}
-<div class="mb-4">
+{% if not is_new and draft and is_editor %}
+<div class="btn-list mb-4">
   <form method="post" action="/design/drafts/{{ draft.draft_id }}/submit" class="d-inline">
     <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
-    <button type="submit" class="btn btn-success" {% if not is_tested %}disabled title="{{ t('design.need_test_to_submit') }}"{% endif %}>
+    <button type="submit" class="btn btn-outline-success" {% if not is_tested %}disabled title="{{ t('design.need_test_to_submit') }}"{% endif %}>
       <i class="ti ti-send me-1"></i>{{ t('design.submit') }}
     </button>
   </form>
+  {% if can_publish and is_tested %}
+  <form method="post" action="/design/drafts/{{ draft.draft_id }}/publish" class="d-inline">
+    <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+    <button type="submit" class="btn btn-success">
+      <i class="ti ti-upload me-1"></i>{{ t('design.publish') }}
+    </button>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 
