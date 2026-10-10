@@ -279,7 +279,10 @@ class SupersetAdminClient:
         r = self._request("GET", f"/api/v1/dataset/{dataset_id}/related_objects")
         if r.status_code != 200:
             raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset related_objects: HTTP {r.status_code}")
-        data = r.json().get("result", {})
+        # Superset 6.1 answers {"charts": {...}, "dashboards": {"count", "result": [...]}} at the top
+        # level, without the "result" wrapper of its other endpoints (checked on a live server).
+        data = r.json()
+        data = data.get("result", data) if "dashboards" not in data else data
         dashboards_raw = data.get("dashboards", {}).get("result", []) if isinstance(data.get("dashboards"), dict) else []
         return [
             {
