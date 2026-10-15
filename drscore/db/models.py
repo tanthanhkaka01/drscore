@@ -555,6 +555,39 @@ class BiDataset(Base):
     loaded_at: Mapped[datetime] = _now()
 
 
+class ReportBiMember(Base):
+    """One dataset of a report's embedded dashboard, and the report that feeds it (owner request
+    2026-10-14: a dashboard may hold charts of several reports).
+
+    Every DRS dataset is the result of one report (its ``bi_dataset_table``). A dashboard on the
+    datasets of several reports is shown for one snapshot of each: the guest token carries one
+    row-level rule per dataset. Written when the dashboard is attached (``selfservice.link_dashboard``);
+    the report itself is one of its members when the dashboard reads its own dataset."""
+
+    __tablename__ = "drs_report_bi_member"
+    __table_args__ = (PrimaryKeyConstraint("report_id", "member_report_id"),)
+
+    report_id: Mapped[int] = _fk("drs_report.report_id")
+    member_report_id: Mapped[int] = _fk("drs_report.report_id")
+    dataset_id: Mapped[int] = mapped_column(IdType, nullable=False)  # Superset's id of the dataset
+    sort_order: Mapped[int] = _int(0)
+
+    member: Mapped[Report] = relationship(foreign_keys=[member_report_id])
+
+
+class ReportBiParam(Base):
+    """A parameter of a member report put on the report's form for its dashboard. A parameter of
+    a member that is not put there runs with its default value."""
+
+    __tablename__ = "drs_report_bi_param"
+    __table_args__ = (PrimaryKeyConstraint("report_id", "member_report_id", "param_name"),)
+
+    report_id: Mapped[int] = _fk("drs_report.report_id")
+    member_report_id: Mapped[int] = _fk("drs_report.report_id")
+    param_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    sort_order: Mapped[int] = _int(0)
+
+
 # --------------------------------------------------------------------------------------------
 # Sessions and logs
 

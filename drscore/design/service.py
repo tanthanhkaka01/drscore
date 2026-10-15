@@ -493,20 +493,6 @@ def _apply_draft(
 
     self_service_on = selfservice.is_on(settings)
 
-    def _auto_bi_table(report_id: int | None = None) -> str:
-        base = draft.report_code.lower()
-        query = select(Report.bi_dataset_table).where(Report.bi_dataset_table.is_not(None))
-        if report_id is not None:
-            query = query.where(Report.report_id != report_id)
-        existing = set(session.scalars(query).all())
-        candidate = base
-        if candidate not in existing:
-            return candidate
-        idx = 2
-        while f"{base}_{idx}" in existing:
-            idx += 1
-        return f"{base}_{idx}"
-
     old_group_id = None
     if draft.report_id is None:
         # New report
@@ -514,7 +500,7 @@ def _apply_draft(
         if live is not None:
             raise DRSError("DRAFT_INVALID", detail={"report_code": f"Report {draft.report_code} already exists."})
 
-        bi_table = _auto_bi_table() if self_service_on else None
+        bi_table = selfservice.table_name(session, draft.report_code) if self_service_on else None
         report = Report(
             report_code=draft.report_code,
             report_name=content["report_name"],
@@ -547,7 +533,7 @@ def _apply_draft(
         report.cache_ttl_seconds = content.get("cache_ttl_seconds", 0)
         report.updated_by = actor
         if self_service_on and not report.bi_dataset_table:
-            report.bi_dataset_table = _auto_bi_table(report.report_id)
+            report.bi_dataset_table = selfservice.table_name(session, draft.report_code, report.report_id)
         session.flush()
         audit(session, actor, "UPDATE", "drs_report", report.report_code, before=before_snap, after=row_snapshot(report))
 

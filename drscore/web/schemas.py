@@ -31,6 +31,15 @@ class RunRequest(_Model):
 
 class BiTokenRequest(_Model):
     snapshot_id: int | None = None  # the snapshot on screen: the dashboard is shown for it
+    # A dashboard that also reads the datasets of other reports: the snapshot of each (bi-members).
+    members: dict[str, int] | None = None
+
+
+class BiMembersRequest(_Model):
+    """The form as it was run: the other reports a dashboard reads run with it."""
+
+    params: dict[str, Any] = {}
+    refresh: bool = False
 
 
 # --------------------------------------------------------------------------------------------
@@ -95,6 +104,10 @@ class ParamInfo(_Model):
     min_value: str | None = None
     max_value: str | None = None
     max_length: int | None = None
+    # An input only the dashboard's other reports read: it is on the form of that tab only, and
+    # says whose parameter it is.
+    view: ViewKey | None = None
+    source: str | None = None
 
 
 class ReportInfo(_Model):

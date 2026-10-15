@@ -20,6 +20,8 @@
   var current = def.default_view;
   var biOf = null;         // the snapshot the embedded dashboard shows (0: one that follows no snapshot)
   var biLinked = false;    // a linked dashboard is loaded once per page
+  var ranWith = null;      // the form as it was run: the dashboard's other reports run with it
+  var ranRefresh = false;
 
   function t(key, values) {
     var text = msg[key] || key;
@@ -227,12 +229,25 @@
 
   // The dashboard reads the report's dataset: it is then one more view of the snapshot on screen.
   function followsReport() { return !!(views.bi && views.bi.bi && views.bi.bi.follows_report); }
+  // It also reads the datasets of other reports, which run with the form (bi-members).
+  function readsMembers() { return !!(views.bi && views.bi.bi && views.bi.bi.members); }
+
+  function showRunError(error) {
+    if (error.code === "PARAM_INVALID") {
+      var rest = showFieldErrors(error.detail);
+      if (rest.length) showError({ code: error.code, message: error.message, detail: rest.join("\n") });
+    } else {
+      showError(error);
+    }
+  }
 
   // The dashboard tab. A linked dashboard is another site's page, loaded once. An embedded one is
   // drawn by the Superset SDK with a guest token from DRS. When it reads the report's dataset it
   // shows the snapshot on screen - the same result as the grid, for the parameters chosen - and is
   // drawn again when that snapshot changes: a guest token opens one snapshot and no other, which is
   // how two users with different parameters see different data in the same dashboard.
+  // A dashboard that also reads the datasets of other reports is shown for a snapshot of each
+  // too: they run first, with the form as it was run (their own inputs are on this tab only).
   function showDashboard() {
     if (!usable("bi")) return;
     var frame = el("bi-frame");
@@ -245,24 +260,41 @@
     var follows = followsReport();
     if (follows && !snapshotId) return;   // nothing was run yet: the "choose and run" hint is on screen
     var shown = follows ? snapshotId : 0;
-    if (biOf === shown) return;
-    biOf = shown;
+    var state = readsMembers() ? shown + " " + JSON.stringify(ranWith || {}) : shown;
+    if (biOf === state) return;
+    biOf = state;
     mount.textContent = "";
+    if (!readsMembers()) { embed(mount, state, follows ? shown : null, null); return; }
+    clearFieldErrors();
+    setBusy(true);
+    api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-members",
+        { params: ranWith || {}, refresh: ranRefresh }).then(function (r) {
+      setBusy(false);
+      if (!r || biOf !== state) return;
+      if (!r.ok) { biOf = null; showRunError(r.body.error || { code: "ERROR", message: "" }); return; }
+      embed(mount, state, shown, r.body.members);
+    }).catch(function (error) {
+      setBusy(false);
+      if (biOf === state) { biOf = null; showError(clientFailure(error)); }
+    });
+  }
+
+  function embed(mount, state, snapshot, members) {
     window.supersetEmbeddedSdk.embedDashboard({
       id: mount.getAttribute("data-dashboard"),
       supersetDomain: mount.getAttribute("data-superset"),
       mountPoint: mount,
       fetchGuestToken: function () {
         return api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-token",
-                   { snapshot_id: follows ? shown : null }).then(function (r) {
+                   { snapshot_id: snapshot, members: members }).then(function (r) {
           if (!r || !r.ok) {
             var error = (r && r.body.error) || { code: "BI_ENGINE_UNAVAILABLE", message: t("error.BI_ENGINE_UNAVAILABLE") };
-            if (biOf === shown) { biOf = null; showError(error); }
+            if (biOf === state) { biOf = null; showError(error); }
             throw new Error(error.code);
           }
           return r.body.token;
         }, function (error) {
-          if (biOf === shown) { biOf = null; showError(clientFailure(error)); }
+          if (biOf === state) { biOf = null; showError(clientFailure(error)); }
           throw error;
         });
       },
@@ -334,21 +366,18 @@
     if (!view) return;
     clearFieldErrors();
     setBusy(true);
+    var params = collectParams();
     api("POST", "/api/reports/" + encodeURIComponent(code) + "/run",
-        { params: collectParams(), refresh: !!refresh, view: view })
+        { params: params, refresh: !!refresh, view: view })
       .then(function (result) {
         setBusy(false);
         if (!result) return;
         if (!result.ok) {
-          var error = result.body.error || { code: "ERROR", message: "" };
-          if (error.code === "PARAM_INVALID") {
-            var rest = showFieldErrors(error.detail);
-            if (rest.length) showError({ code: error.code, message: error.message, detail: rest.join("\n") });
-          } else {
-            showError(error);
-          }
+          showRunError(result.body.error || { code: "ERROR", message: "" });
           return;
         }
+        ranWith = params;
+        ranRefresh = !!refresh;
         if (!result.body.snapshot) { activate(current); return; }
         snapshotId = result.body.snapshot.id;
         gridOf = htmlOf = null;   // the dashboard notices the new snapshot by itself (biOf)

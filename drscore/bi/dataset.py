@@ -89,6 +89,13 @@ def rls_clause(snapshot_id: int) -> str:
     return f"{SNAPSHOT_COLUMN} = {int(snapshot_id)}"
 
 
+def rls_clause_any(snapshot_ids: Sequence[int]) -> str:
+    """The rule of a guest token for every dataset of a dashboard on several reports' datasets: the
+    snapshots on screen and no other. Each dataset also gets the rule of its own snapshot; this one
+    is what a dataset no rule names falls under - empty for a DRS dataset, an error for any other."""
+    return f"{SNAPSHOT_COLUMN} IN ({', '.join(str(int(i)) for i in sorted(set(snapshot_ids)))})"
+
+
 def _checked(columns: Sequence[dict[str, str]]) -> None:
     seen: set[str] = set()
     for c in columns:

@@ -213,23 +213,36 @@ DRS signs in to Superset with an account having the **Admin** role (`admin_usern
 - Enable embedding of a dashboard (`POST /api/v1/dashboard/<id>/embedded`) with allowed domains
   set to the origin of `[app] base_url`.
 - Discover which dashboards use a dataset (`GET /api/v1/dataset/<id>/related_objects`).
+- Read which table a dataset is on (`GET /api/v1/dataset/<id>`) and which datasets a dashboard
+  uses (`GET /api/v1/dashboard/<id>/datasets`): for a dashboard on the datasets of several reports,
+  when it is attached and again (cached 60 seconds) whenever a guest token is issued.
+- List, for the BI page, the datasets of the DRS connection (`GET /api/v1/dataset/`), every chart
+  (`GET /api/v1/chart/`), the owners of a dashboard (`GET /api/v1/dashboard/<id>`) and the
+  designer's Superset account by name (`GET /api/v1/security/users/`, the security API that also
+  serves the roles: `FAB_ADD_SECURITY_API = True`).
 
 By contrast, the guest-token service account (`drs_service`) remains minimally privileged with only
 token issuance rights.
 
 ### What DRS does automatically
 - Automatically names the BI dataset table `report_code.lower()` when a report is published or
-  approved (appending `_2`, `_3` if a name conflict exists).
+  approved, or created or saved in the administration pages with "BI dataset table" left empty
+  (appending `_2`, `_3` if a name conflict exists). A table name typed there is kept.
+- A report without a table or a dataset yet (made before 1.4 in the administration pages, for
+  example): **Create BI dataset** on its BI page (a designer who may publish in its group, or an
+  administrator) names the table, runs the report with its default values into it and makes the
+  Superset dataset at once. **Create BI table** in the administration pages names it too.
 - Runs `prepare_dataset` in a background thread to execute the report with default parameters and
   refresh the PostgreSQL view `drs_bi.<table>`.
 - Syncs with Superset: creates or finds the dataset, refreshes columns, and updates permissions in
   the group's `DRS_DESIGN_<GROUP_CODE>` role.
 - Discovers dashboards built on the dataset and displays usability status on the BI page.
+- Shows a designer only what is on data they may design (see below).
 - Enables dashboard embedding and links `bi_design_uri = superset:<uuid>` when the designer clicks
   **Use for this report**.
 
 ### One-time administrator setup
-1. **Database migration**: Run `python -m drscore db upgrade` (migration `0010_can_publish`).
+1. **Database migration**: Run `python -m drscore db upgrade` (migrations up to `0011_dashboard_members`).
 2. **Superset configuration**: Set the five `[bi.superset]` keys in `config/app.toml` and export
    `DRS_SUPERSET_ADMIN_PASSWORD`.
 3. **Database connection in Superset**: Ensure a database connection named `database_name` (e.g. `DRS`)
@@ -251,6 +264,66 @@ token issuance rights.
    python -m drscore grant group SALES --user designer --design --publish
    python -m drscore grant datasource SALES_DB --user designer
    ```
+
+### A dashboard on the datasets of several reports
+
+The dashboard of a report may also hold charts on the datasets of **other DRS reports** (its
+*members*). Every dataset must be the dataset of a DRS report; a dashboard with a chart on any
+other dataset cannot be attached ("Dashboard uses N other dataset(s) that no DRS report feeds").
+When it is attached, DRS records which report feeds each dataset (`drs_report_bi_member`), and the
+BI page lists "also reads: ..." beside it.
+
+**Parameters.** Every report keeps its own parameters, and each member runs with values too:
+
+- The report's own parameters stay on its form, as before.
+- On the BI page, **Parameters of the dashboard**, the designer drags parameters of the members
+  onto the report's form (or clicks +), and orders them (drag, or the arrows). Saved in
+  `drs_report_bi_param`.
+- A parameter with the **same name, label and type** (and both single or both multiple) as an
+  input already on the form **shares** that input: the report's own `from_date` feeds the
+  `from_date` of every member put there with the same label. Otherwise it gets an input of its own,
+  named `<MEMBER_CODE>-<param>`, shown on the **Dashboard tab** only, with the member's name.
+- A parameter **not put on the form runs with its default value**. A required parameter without a
+  default must be put there: the BI page refuses to save a form without it.
+
+**When a user opens the Dashboard tab**, the report runs as for every tab; then each member runs
+for that user with the form as it was run (`POST /api/reports/<code>/bi-members`) - same cache,
+same retention, same access log (`view_key = dataset`). The guest token carries one row-level rule
+per dataset, `drs_snapshot_id = <that report's snapshot>`, plus one for every dataset,
+`drs_snapshot_id IN (<the snapshots on screen>)`, so that a dataset no rule names shows nothing.
+
+**Checks:**
+
+- The user must be allowed to view **every** member. If not, the Dashboard tab says which report
+  they need access to (the other tabs work).
+- A member with row-filter rules cannot be read by a dashboard (refused when attaching, and the tab
+  shows `REPORT_MISCONFIGURED` if rules are added later).
+- At each guest token DRS asks Superset which datasets the dashboard uses now. A dataset added in
+  Superset since the dashboard was attached is refused (`DESIGN_INVALID`): **attach the dashboard
+  again** on the BI page after adding charts of another report. A dashboard attached before 1.4, or
+  without self-service, reads the report's own dataset only and works as before.
+- The guest role `DRS_Embedded` needs `datasource access` on the members' datasets too.
+
+### What a designer sees on the BI page
+
+The BI page lists, from Superset, the **dashboards** that use the report's dataset (to attach one),
+and in **Datasets and charts in Superset** the datasets of the reports the designer may design and
+the charts built on them:
+
+- **Only data they may design.** A report counts when the designer may change it: its group is
+  granted to them with *design*, and they may query its datasource (and those of its options
+  queries). A dashboard is listed only if every dataset it reads is the dataset of such a report;
+  a chart, only if its dataset is. Attaching a dashboard that reads another report is refused
+  the same way (`member_forbidden`). An **administrator sees everything**, charts outside DRS too.
+- **Mine / All** (top of the page, *Mine* by default): *Mine* keeps the dashboards and charts the
+  designer owns in Superset, and the datasets of the reports they created in DRS (`created_by`).
+  The Superset account must have the **same username** as the DRS user; without one, the page says
+  so and *Mine* keeps only the datasets. *All* shows everything they may see, theirs marked.
+- When Superset's lists cannot be read, the page says so (the reason to administrators) and the
+  dashboards of the report stay listed, unfiltered by owner.
+
+This filters the BI page of DRS only. What a designer sees inside Superset is set by the Superset
+roles (`Gamma` + `DRS_DESIGN_<GROUP_CODE>`, above).
 
 ### Restricted reports and row filters
 - **Restricted reports** (`is_restricted = true`): Never placed into any `DRS_DESIGN_` role.
@@ -289,7 +362,9 @@ values, for the report's retention. The dataset is that JSON read as rows and co
 Both have the column `drs_snapshot_id`. When a user opens the Dashboard tab, DRS asks Superset for
 a guest token that carries the row-level rule `drs_snapshot_id = <the snapshot on their screen>` -
 Superset's own mechanism for embedded dashboards - so the charts read that one result. The rule
-applies to every dataset of the dashboard: build a report's dashboard on that report's dataset.
+applies to every dataset of the dashboard: build a report's dashboard on that report's dataset,
+and on the datasets of other DRS reports only as described in "A dashboard on the datasets of
+several reports" (one rule per dataset, each for the snapshot of its own report).
 
 In Superset itself, outside DRS, no such rule applies: the dataset shows every result of the report
 that is in the cache at that moment. While designing, keep one (`python -m drscore cache clear
@@ -310,7 +385,12 @@ Superset can also save a dashboard as PDF or image (Download menu).
 | A container cannot reach a server of the office network whose address starts with `172.17.` (time-out) | Docker's default bridge network is `172.17.0.0/16`: inside Docker such an address never leaves the machine. Move Docker off that range (Docker Engine settings: `"bip": "10.213.0.1/24"`, then restart Docker), or - without touching Docker - run a TCP relay on the host and name `host.docker.internal:<port>` in Superset's connection. |
 | The dashboard shows old numbers | The dataset table follows the report's retention: it is rewritten when the Dashboard tab is opened after `cache_ttl_seconds`, or by `python -m drscore cache warm --report CODE`. |
 | DRS shows `BI_ENGINE_UNAVAILABLE: the Superset admin password is not set` | The environment variable configured in `admin_password_env` (`DRS_SUPERSET_ADMIN_PASSWORD`) is not exported in the DRS process environment. |
-| The BI page says `dataset not made yet - run the report once` | The report has not been executed yet so its view in `drs_bi` does not exist. Open the report and click **Run**, or click **Sync now** on the BI page after running. |
-| Attaching a dashboard is refused: `Dashboard uses N other dataset(s)` | All charts in the dashboard must use only the report's dataset. Embedded guest tokens enforce `drs_snapshot_id` across every dataset in the dashboard. |
+| The BI page says `dataset not made yet - run the report once` | The report has not been executed yet so its view in `drs_bi` does not exist. Click **Create BI dataset** on the BI page, or open the report and click **Run**. |
+| A report made in the administration pages has no **Open in Superset** and no dashboard to attach; the BI page says it has no BI dataset table | Made before 1.4, it got no table name (only published drafts did). Click **Create BI dataset** on its BI page, or **Create BI table** in the administration pages. |
+| **Create BI dataset** says a required parameter has no default value | The table is named, but a run without values is impossible: open the report, run it once with values (that fills the dataset), then come back. |
+| The BI page lists no dashboard or chart although there are some in Superset | *Mine* is chosen (the default): click **All**. Or they read a report the designer may not design (another group, or a datasource not granted to them). Or the Superset account has another username than the DRS user. |
+| Attaching a dashboard is refused: `Dashboard uses N other dataset(s) that no DRS report feeds` | Every chart must be built on the dataset of a DRS report (`drs_bi.<table>`), and the dashboard must use the report's own dataset. See "A dashboard on the datasets of several reports". |
+| The Dashboard tab shows `DESIGN_INVALID` after charts were added in Superset | The dashboard now uses a dataset DRS did not record when it was attached: click **Use for this report** again on the BI page. |
+| The Dashboard tab shows `FORBIDDEN` with a report code | The dashboard also reads that report: grant the user access to it, or take its charts off the dashboard. |
 | Attaching a dashboard is refused: row filters | Reports with row filters (`drs_report_row_filter`) cannot be embedded because guest tokens do not carry row rules for row filters. Remove the row filters or use grid/HTML views. |
 | The BI page says `not available on SQLite` | Self-service Superset integration is available on PostgreSQL DRS databases only (which provide schema views in `drs_bi`). |

@@ -24,6 +24,7 @@ from drscore.db.types import utcnow
 from drscore.errors import DRSError
 from drscore.export import writers
 from drscore.bi import dataset as bi_dataset
+from drscore.bi import members as bi_members
 from drscore.bi import superset
 from drscore.render import design, html
 from drscore.render.grid import grid_columns, project
@@ -91,6 +92,16 @@ def _default(p, ctx):
         raise DRSError("REPORT_MISCONFIGURED", admin_detail=f"parameter {p.name}: {exc}") from exc
 
 
+def _reads_members(session, report: Report, user: User, d: design.Design) -> bool:
+    """The embedded dashboard also reads the datasets of other reports - which the user must be
+    allowed to view, and which have no row-filter rules (``bi_members.check_members``)."""
+    if d.kind != "bi_embed":
+        return False
+    fed = bi_members.members_of(session, report.report_id)
+    bi_members.check_members(session, user, report.report_code, fed)
+    return any(not m.is_host for m in fed)
+
+
 def view_states(session, report: Report, user: User, settings: AppSettings) -> list[ViewInfo]:
     """Every tab of the report with its state. A tab whose design is missing or broken is still
     listed (no design, no view: it shows the error); the others work."""
@@ -98,12 +109,42 @@ def view_states(session, report: Report, user: User, settings: AppSettings) -> l
     for key in design.available_views(report):
         try:
             d = design.check(session, report, settings, key)
-            states.append(ViewInfo(key=key, ok=True,
-                                   bi=bi_payload(d, settings, bool(report.bi_dataset_table)) if key == "bi" else None))
+            bi = None
+            if key == "bi":
+                bi = bi_payload(d, settings, bool(report.bi_dataset_table), _reads_members(session, report, user, d))
+            states.append(ViewInfo(key=key, ok=True, bi=bi))
         except DRSError as exc:
+            # ``detail`` names, for everyone, the report a dashboard reads that the user may not view.
             states.append(ViewInfo(key=key, ok=False, error=ErrorBody(
-                code=exc.code, message=exc.message, detail=exc.admin_detail if user.is_admin else None)))
+                code=exc.code, message=exc.message, detail=exc.admin_detail if user.is_admin else exc.detail)))
     return states
+
+
+def _param_info(p, ctx, options, defs, **extra) -> ParamInfo:
+    return ParamInfo(
+        name=p.name, label=p.label, data_type=p.data_type, input_kind=p.input_kind,
+        required=p.is_required, default=_input_text(_default(p, ctx), p.data_type),
+        options=[ParamOption(**o) for o in options[p.name]] if p.has_options else None,
+        depends_on=parents_of(p, defs) or None,
+        min_value=p.min_value, max_value=p.max_value, max_length=p.max_length,
+    ).model_copy(update=extra)
+
+
+def _dashboard_params(session, report: Report, settings: AppSettings, ctx) -> list[ParamInfo]:
+    """The inputs the dashboard adds to the form: parameters of the other reports it reads that
+    are not one of the report's own inputs. Each depends on the inputs its options query uses."""
+    pan = bi_members.panel(session, report)
+    infos, options = [], {}
+    for e in pan.extra():
+        m = next(m for m in pan.others if m.code == e.report_code)
+        defs = pan.defs[m.code]
+        if m.code not in options:
+            loader = options_loader(session, session.get(Report, m.report_id), settings)
+            options[m.code], _ = form_options(defs, {}, ctx, loader)
+        parents = [x.name for x in (pan.entry_of(m.code, n) for n in parents_of(e.p, defs)) if x is not None]
+        infos.append(_param_info(e.p, ctx, options[m.code], defs, name=e.name, depends_on=parents or None,
+                                 view="bi", source=m.name))
+    return infos
 
 
 def definition(database: Database, settings: AppSettings, username: str, code: str) -> ReportDefinition:
@@ -113,20 +154,21 @@ def definition(database: Database, settings: AppSettings, username: str, code: s
         ctx = default_context(settings, user_attributes(s, user))
         defs = param_defs(s, report.report_id)
         options, _ = form_options(defs, {}, ctx, options_loader(s, report, settings))
-        params = []
-        for p in defs:
-            params.append(ParamInfo(
-                name=p.name, label=p.label, data_type=p.data_type, input_kind=p.input_kind,
-                required=p.is_required, default=_input_text(_default(p, ctx), p.data_type),
-                options=[ParamOption(**o) for o in options[p.name]] if p.has_options else None,
-                depends_on=parents_of(p, defs) or None,
-                min_value=p.min_value, max_value=p.max_value, max_length=p.max_length,
-            ))
+        params = [_param_info(p, ctx, options, defs) for p in defs]
         views = view_states(s, report, user, settings)
         if not views:
             raise DRSError("REPORT_MISCONFIGURED", admin_detail="the report has no query and no design: nothing to show")
         default = design.default_view(report)
+        # The report's own inputs only: those of the dashboard's other reports are asked for there.
         auto_run = all(not p.required or p.default not in (None, "", []) for p in params)
+        bi_view = next((v for v in views if v.key == "bi" and v.ok and v.bi.get("members")), None)
+        if bi_view is not None:
+            try:
+                params += _dashboard_params(s, report, settings, ctx)
+            except DRSError as exc:  # the options of another report: its tab says so, the others work
+                bi_view.ok, bi_view.bi = False, None
+                bi_view.error = ErrorBody(code=exc.code, message=exc.message,
+                                          detail=exc.admin_detail if user.is_admin else None)
         has_grid = "grid" in design.available_views(report)
         return ReportDefinition(report=report_info(report), params=params,
                                 can_export=access.can_export and has_grid, can_refresh=access.can_refresh,
@@ -140,6 +182,8 @@ def param_options(database: Database, settings: AppSettings, username: str, code
     with database.session() as s:
         user = _user(s, username)
         report, _ = require_report(s, user, code)
+        if bi_members.is_member_input(name):
+            return _member_param_options(s, settings, user, report, name, submitted)
         defs = param_defs(s, report.report_id)
         p = next((d for d in defs if d.name == name and d.has_options), None)
         if p is None:
@@ -153,6 +197,31 @@ def param_options(database: Database, settings: AppSettings, username: str, code
         info = ParamInfo(name=p.name, label=p.label, data_type=p.data_type, input_kind=p.input_kind,
                          required=p.is_required, options=[ParamOption(**o) for o in options[name]])
         return info, chosen if isinstance(chosen, list) else [] if chosen is None else [chosen]
+
+
+def _member_param_options(s, settings: AppSettings, user: User, report: Report, name: str,
+                          submitted: dict[str, Any]) -> tuple[ParamInfo, list[str]]:
+    """``param_options`` for an input of the dashboard: the options of that parameter of the other
+    report, for the values its own parameters get from the form (their default when not on it)."""
+    pan = bi_members.panel(s, report)
+    e = pan.entry_named(name)
+    if e is None or e.on_report or not e.p.has_options:
+        raise DRSError("REPORT_NOT_FOUND", admin_detail=f"{report.report_code} has no dashboard select input {name}")
+    bi_members.check_members(s, user, report.report_code, pan.members)
+    m = next(m for m in pan.others if m.code == e.report_code)
+    defs = pan.defs[m.code]
+    values = pan.inputs_for(m.code, submitted)
+    for d in defs:  # a ticked checkbox is sent as "on", an unticked one is left out
+        on_form = pan.entry_of(m.code, d.name)
+        if on_form is not None and d.data_type == "bool" and d.input_kind == "input":
+            values[d.name] = "true" if on_form.name in submitted else "false"
+    ctx = default_context(settings, user_attributes(s, user))
+    loader = options_loader(s, s.get(Report, m.report_id), settings)
+    options, chosen_values = form_options(defs, values, ctx, loader)
+    chosen = _input_text(chosen_values[e.p.name], e.p.data_type)
+    info = ParamInfo(name=e.name, label=e.p.label, data_type=e.p.data_type, input_kind=e.p.input_kind,
+                     required=e.p.is_required, options=[ParamOption(**o) for o in options[e.p.name]])
+    return info, chosen if isinstance(chosen, list) else [] if chosen is None else [chosen]
 
 
 # --------------------------------------------------------------------------------------------
@@ -175,13 +244,15 @@ def html_url(code: str, snapshot_id: int) -> str:
     return f"/reports/{code}/html?snapshot_id={snapshot_id}"
 
 
-def bi_payload(d: design.Design, settings: AppSettings, follows_report: bool) -> dict[str, Any]:
+def bi_payload(d: design.Design, settings: AppSettings, follows_report: bool,
+               members: bool = False) -> dict[str, Any]:
     """``follows_report``: the dashboard reads the report's dataset, so it is shown for the snapshot
-    on screen - the result for the parameters the user chose - like the grid and the HTML design."""
+    on screen - the result for the parameters the user chose - like the grid and the HTML design.
+    ``members``: it also reads the datasets of other reports, which run with the form (``bi_members``)."""
     if d.kind == "bi_link":
         return {"mode": "LINK", "url": d.url, "follows_report": False}
     return {"mode": "EMBED", "superset_url": settings.bi.superset.base_url, "dashboard_id": d.dashboard_id,
-            "follows_report": follows_report}
+            "follows_report": follows_report, "members": members}
 
 
 def open_design(database: Database, settings: AppSettings, username: str, code: str,
@@ -195,7 +266,9 @@ def open_design(database: Database, settings: AppSettings, username: str, code: 
 def run(database: Database, settings: AppSettings, username: str, code: str, params: dict[str, Any],
         refresh: bool, client_ip: str | None, view: str | None = None) -> RunResponse:
     """Runs the report (or reads its snapshot) for one view. The other views of the same
-    snapshot are then read without running again (``grid_of_snapshot``, the HTML route)."""
+    snapshot are then read without running again (``grid_of_snapshot``, the HTML route). The
+    inputs of the dashboard's other reports are theirs (``bi_members``), not the report's."""
+    params = {k: v for k, v in (params or {}).items() if not bi_members.is_member_input(k)}
     with database.session() as s:
         report, _ = require_report(s, _user(s, username), code)
         chosen = design.require_view(report, view)
@@ -287,12 +360,13 @@ def bi_answer(database: Database, settings: AppSettings, username: str, code: st
             report_id, table = report.report_id, report.bi_dataset_table
             if table:
                 bi_dataset.physical_name(database, table)  # the name is checked before anything runs
+            members = _reads_members(s, report, _user(s, username), d)
     except DRSError as exc:
         log_access(username, "VIEW", "DENIED" if exc.code == "FORBIDDEN" else "ERROR", report_code=code,
                    error_code=exc.code, error_message=exc.admin_detail or exc.message, client_ip=client_ip,
                    view_key="bi")
         raise
-    payload = bi_payload(d, settings, bool(table))
+    payload = bi_payload(d, settings, bool(table), members)
     if not table:
         log_access(username, "VIEW", "OK", report_code=code, client_ip=client_ip, view_key="bi")
         return RunResponse(report=info, view="bi", params={}, row_count=0, bi=payload)
@@ -304,13 +378,83 @@ def bi_answer(database: Database, settings: AppSettings, username: str, code: st
                        params=served.outcome.params, row_count=len(served.outcome.rows), bi=payload)
 
 
+def bi_members_run(database: Database, settings: AppSettings, username: str, code: str,
+                   params: dict[str, Any] | None, refresh: bool, client_ip: str | None) -> dict[str, int]:
+    """Runs the other reports whose datasets the embedded dashboard of this report reads, each
+    with the inputs of the form its parameters are on (``bi_members``) - their default for the
+    others. Returns the snapshot of each by report code: the dashboard is shown for them
+    (``bi_token``). A refresh refreshes the reports the user may refresh, and reads the others.
+
+    A value one of them refuses is reported beside its input, as for the report itself."""
+    try:
+        with database.session() as s:
+            user = _user(s, username)
+            report, _ = require_report(s, user, code)
+            d = design.check(s, report, settings, design.require_view(report, "bi"))
+            if d.kind != "bi_embed":
+                raise DRSError("VIEW_NOT_AVAILABLE", admin_detail="the dashboard is not in embedded mode")
+            pan = bi_members.panel(s, report)
+            bi_members.check_members(s, user, code, pan.members)
+            plan = [(m, pan.inputs_for(m.code, params), refresh and require_report(s, user, m.code)[1].can_refresh)
+                    for m in pan.others]
+    except DRSError as exc:
+        log_access(username, "VIEW", "DENIED" if exc.code == "FORBIDDEN" else "ERROR", report_code=code,
+                   error_code=exc.code, error_message=exc.admin_detail or exc.message, client_ip=client_ip,
+                   view_key="bi")
+        raise
+    snapshots: dict[str, int] = {}
+    errors: dict[str, str] = {}
+    for m, raw, again in plan:  # each run is logged as the user's run of that report
+        try:
+            served = run_for_user(database, settings, username, m.code, raw, refresh=again, client_ip=client_ip,
+                                  view="dataset")
+        except DRSError as exc:
+            if exc.code != "PARAM_INVALID":
+                raise DRSError(exc.code, exc.detail, admin_detail=f"{m.code}: {exc.admin_detail or exc.message}") from exc
+            for name, message in (exc.detail or {}).items():
+                e = pan.entry_of(m.code, name)  # not on the form: its default could not be used
+                errors[e.name if e is not None else f"{m.name} ({name})"] = message
+            continue
+        bi_dataset.refresh(database, m.report_id, m.table, served.outcome)
+        snapshots[m.code] = served.outcome.snapshot_id
+    if errors:
+        raise DRSError("PARAM_INVALID", detail=errors)
+    return snapshots
+
+
+def _member_rules(database: Database, settings: AppSettings, dashboard_uuid: str,
+                  feeds: list[tuple[bi_members.Member, Any]]) -> list[dict[str, Any]]:
+    """The row-level rules of a dashboard on the datasets of several reports: one per dataset, for
+    the snapshot of its report, and one for every dataset - the snapshots on screen, no other - so
+    that a dataset added to the dashboard in Superset since it was attached shows nothing.
+    Superset is asked which datasets the dashboard uses now; one that no report of it feeds is
+    refused with a reason, rather than shown empty."""
+    used = bi_members.dashboard_datasets(settings, dashboard_uuid)
+    if used is not None:
+        unknown = used - {m.dataset_id for m, _ in feeds}
+        if unknown:
+            raise DRSError("DESIGN_INVALID", admin_detail=(
+                f"the dashboard now uses the dataset(s) {sorted(unknown)}, which no report of it feeds: "
+                "attach it again on the BI page"))
+    rls = [{"clause": bi_dataset.rls_clause_any([rows.snapshot_id for _, rows in feeds])}]
+    for m, rows in feeds:
+        if used is not None and m.dataset_id not in used:
+            continue
+        bi_dataset.refresh(database, m.report_id, m.table, rows)
+        rls.append({"dataset": m.dataset_id, "clause": bi_dataset.rls_clause(rows.snapshot_id)})
+    return rls
+
+
 def bi_token(database: Database, settings: AppSettings, username: str, code: str, client_ip: str | None,
-             snapshot_id: int | None = None) -> str:
+             snapshot_id: int | None = None, members: dict[str, int] | None = None) -> str:
     """A guest token for the embedded dashboard of a report (spec 14.4 step 5), limited to that one
     dashboard - and, for a report with ``bi_dataset_table``, to one snapshot of it: the result on
     the user's screen. The token carries Superset's row-level rule ``drs_snapshot_id = <snapshot>``,
     so two users who chose different parameters read different data through the same dataset.
-    A report with row-filter rules never gets here (design check)."""
+    A report with row-filter rules never gets here (design check).
+
+    A dashboard that also reads the datasets of other reports is shown for one snapshot of each
+    (``members``, from ``bi_members_run``): the user must be allowed to view each of them."""
     try:
         with database.session() as s:
             user = _user(s, username)
@@ -320,16 +464,34 @@ def bi_token(database: Database, settings: AppSettings, username: str, code: str
                 raise DRSError("VIEW_NOT_AVAILABLE", admin_detail="the dashboard is not in embedded mode")
             who = {"username": user.username, "first_name": user.display_name, "last_name": ""}
             report_id, table, snapshot = report.report_id, report.bi_dataset_table, None
+            fed = bi_members.members_of(s, report_id)
+            bi_members.check_members(s, user, code, fed)
             if table:
                 # Of this report, and still in the cache: the dataset holds nothing else.
                 snap = s.get(ReportSnapshot, snapshot_id) if snapshot_id is not None else None
                 if snap is None or snap.report_id != report_id:
                     raise DRSError("SNAPSHOT_GONE")
                 snapshot = _Rows(snap.snapshot_id, snap.columns_json, snap.rows_json)
-        rls = []
-        if snapshot is not None:
-            bi_dataset.refresh(database, report_id, table, snapshot)
-            rls = [{"clause": bi_dataset.rls_clause(snapshot.snapshot_id)}]
+            feeds = []
+            for m in fed:
+                if m.is_host:
+                    if snapshot is not None:
+                        feeds.append((m, snapshot))
+                    continue
+                wanted = (members or {}).get(m.code)
+                snap = s.get(ReportSnapshot, wanted) if wanted is not None else None
+                if snap is None or snap.report_id != m.report_id:
+                    raise DRSError("SNAPSHOT_GONE", admin_detail=f"no snapshot of {m.code}")
+                feeds.append((m, _Rows(snap.snapshot_id, snap.columns_json, snap.rows_json)))
+        if fed:  # the datasets of the dashboard are known: never a token without their rules
+            if not feeds:
+                raise DRSError("SNAPSHOT_GONE")
+            rls = _member_rules(database, settings, d.dashboard_id, feeds)
+        else:
+            rls = []
+            if snapshot is not None:
+                bi_dataset.refresh(database, report_id, table, snapshot)
+                rls = [{"clause": bi_dataset.rls_clause(snapshot.snapshot_id)}]
         token = superset.client(settings.bi.superset).guest_token(d.dashboard_id, who, rls=rls)
     except DRSError as exc:
         log_access(username, "BI_TOKEN", "DENIED" if exc.code == "FORBIDDEN" else "ERROR", report_code=code,

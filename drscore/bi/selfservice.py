@@ -14,14 +14,24 @@ import urllib.parse
 from typing import Any, Iterable, Protocol
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 from drscore.audit import audit
-from drscore.authz.design import can_edit_report, design_rights, param_datasource_ids
+from drscore.authz.design import DesignRights, can_edit_report, design_rights, param_datasource_ids
 from drscore.bi import dataset as bi_dataset
+from drscore.bi import members as bi_members
 from drscore.bi.superset import clear_dashboard_cache
 from drscore.db.engine import Database
-from drscore.db.models import BiDataset, Report, ReportGroup, ReportRowFilter, User
+from drscore.db.models import (
+    BiDataset,
+    Report,
+    ReportBiMember,
+    ReportBiParam,
+    ReportGroup,
+    ReportRowFilter,
+    User,
+)
 from drscore.errors import DRSError
 from drscore.settings import AppSettings, Settings, SupersetSection
 
@@ -52,6 +62,30 @@ def _base_url(settings: AppSettings | Settings) -> str:
     return _app(settings).app.base_url
 
 
+def table_name(session: Session, report_code: str, report_id: int | None = None) -> str:
+    """The BI dataset table self-service gives a report: its code in lower case, with ``_2``,
+    ``_3``... when another report already has that table."""
+    query = select(Report.bi_dataset_table).where(Report.bi_dataset_table.is_not(None))
+    if report_id is not None:
+        query = query.where(Report.report_id != report_id)
+    taken = set(session.scalars(query).all())
+    base = candidate = report_code.lower()
+    n = 2
+    while candidate in taken:
+        candidate = f"{base}_{n}"
+        n += 1
+    return candidate
+
+
+def _rison(text: str) -> str:
+    """A rison string (the ``q`` of Superset's list endpoints)."""
+    return "'" + text.replace("!", "!!").replace("'", "!'") + "'"
+
+
+def _owner_ids(item: dict[str, Any]) -> set[int]:
+    return {o["id"] for o in item.get("owners") or [] if isinstance(o, dict) and "id" in o}
+
+
 def is_on(settings: AppSettings | Settings) -> bool:
     """Self-service is on: Superset is enabled, ``self_service`` is true and an admin account is named."""
     cfg = _superset_cfg(settings)
@@ -66,6 +100,8 @@ class SupersetAdmin(Protocol):
     def database_id(self, name: str) -> int: ...
 
     def find_dataset(self, database_id: int, schema: str, table: str) -> dict[str, Any] | None: ...
+
+    def dataset_table(self, dataset_id: int) -> dict[str, Any] | None: ...
 
     def create_dataset(self, database_id: int, schema: str, table: str) -> dict[str, Any]: ...
 
@@ -88,6 +124,19 @@ class SupersetAdmin(Protocol):
     def enable_embedding(self, dashboard_id: int, allowed_domains: list[str]) -> str: ...
 
     def embedded_dashboard_id(self, uuid: str) -> int | None: ...
+
+    def user_id(self, username: str) -> int | None: ...
+
+    def dataset_list(self, database_id: int) -> list[dict[str, Any]]: ...
+
+    def chart_list(self) -> list[dict[str, Any]]: ...
+
+    def dashboard_owner_ids(self, dashboard_id: int) -> set[int]: ...
+
+
+# Superset's list endpoints answer 100 items a page at most; past this many pages the list stops.
+_PAGE_SIZE = 100
+_MAX_PAGES = 50
 
 
 class SupersetAdminClient:
@@ -189,6 +238,17 @@ class SupersetAdminClient:
         if not perm:
             perm = f"[{self.cfg.database_name}].[{table}](id:{ds_id})"
         return {"id": ds_id, "perm": perm}
+
+    def dataset_table(self, dataset_id: int) -> dict[str, Any] | None:
+        """{"database_id", "schema", "table"} of a dataset; None when Superset has no such dataset."""
+        r = self._request("GET", f"/api/v1/dataset/{dataset_id}")
+        if r.status_code == 404:
+            return None
+        if r.status_code != 200:
+            raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset dataset {dataset_id}: HTTP {r.status_code}")
+        res = r.json().get("result", {})
+        database = res.get("database") or {}
+        return {"database_id": database.get("id"), "schema": res.get("schema"), "table": res.get("table_name")}
 
     def create_dataset(self, database_id: int, schema: str, table: str) -> dict[str, Any]:
         body = {"database": database_id, "schema": schema, "table_name": table}
@@ -327,6 +387,53 @@ class SupersetAdminClient:
         if r.status_code == 404:
             return None
         raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset embedded_dashboard: HTTP {r.status_code}")
+
+    def _pages(self, path: str, what: str, filters: str = "") -> list[dict[str, Any]]:
+        """Every item of a list endpoint, a page at a time."""
+        items: list[dict[str, Any]] = []
+        for page in range(_MAX_PAGES):
+            q = f"({filters + ',' if filters else ''}page:{page},page_size:{_PAGE_SIZE})"
+            r = self._request("GET", f"{path}?q={urllib.parse.quote(q)}")
+            if r.status_code != 200:
+                raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset {what}: HTTP {r.status_code}")
+            data = r.json()
+            batch = data.get("result", [])
+            items.extend(batch)
+            count = data.get("count")
+            if len(batch) < _PAGE_SIZE or (count is not None and len(items) >= count):
+                break
+        return items
+
+    def user_id(self, username: str) -> int | None:
+        """The Superset account of that name (a designer signs in to Superset with their DRS name)."""
+        q = f"(filters:!((col:username,opr:eq,value:{_rison(username)})))"
+        r = self._request("GET", f"/api/v1/security/users/?q={urllib.parse.quote(q)}")
+        if r.status_code != 200:
+            raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset users: HTTP {r.status_code}")
+        found = [u for u in r.json().get("result", []) if u.get("username") == username]
+        return found[0]["id"] if found else None
+
+    def dataset_list(self, database_id: int) -> list[dict[str, Any]]:
+        """The datasets on that database connection: {"id", "schema", "table", "owner_ids"}."""
+        items = self._pages("/api/v1/dataset/", "datasets",
+                            f"filters:!((col:database,opr:rel_o_m,value:{database_id}))")
+        return [{"id": d["id"], "schema": d.get("schema"), "table": d.get("table_name"), "owner_ids": _owner_ids(d)}
+                for d in items]
+
+    def chart_list(self) -> list[dict[str, Any]]:
+        """Every chart: {"id", "title", "viz_type", "dataset_id", "dataset_name", "owner_ids"}."""
+        return [{"id": c["id"], "title": c.get("slice_name") or f"Chart {c['id']}", "viz_type": c.get("viz_type"),
+                 "dataset_id": c.get("datasource_id"), "dataset_name": c.get("datasource_name_text"),
+                 "owner_ids": _owner_ids(c)}
+                for c in self._pages("/api/v1/chart/", "charts")]
+
+    def dashboard_owner_ids(self, dashboard_id: int) -> set[int]:
+        r = self._request("GET", f"/api/v1/dashboard/{dashboard_id}")
+        if r.status_code == 404:
+            return set()
+        if r.status_code != 200:
+            raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=f"Superset dashboard {dashboard_id}: HTTP {r.status_code}")
+        return _owner_ids(r.json().get("result", {}))
 
 
 _admin_override: SupersetAdmin | None = None
@@ -506,8 +613,92 @@ def schedule_sync(report_id: int) -> None:
     t.start()
 
 
-def report_dashboards(database: Database, settings: AppSettings | Settings, report_code: str) -> dict[str, Any]:
-    """Returns dataset info and dashboards for the given report."""
+def _feeds(s: Session, database: Database, client: SupersetAdmin, db_id: int,
+           dataset_ids: Iterable[int]) -> tuple[dict[int, Report], list[int]]:
+    """The DRS report that feeds each dataset of a dashboard (its ``bi_dataset_table``, on the DRS
+    database connection), and the datasets no report feeds."""
+    fed: dict[int, Report] = {}
+    unknown: list[int] = []
+    for ds_id in sorted(dataset_ids):
+        info = client.dataset_table(ds_id)
+        report = None
+        if info and info.get("database_id") == db_id and info.get("table"):
+            report = s.scalars(select(Report).where(Report.bi_dataset_table == info["table"],
+                                                    Report.is_active.is_(True))).first()
+            if report is not None and bi_dataset.physical_name(database, report.bi_dataset_table) != (
+                    info.get("schema"), info["table"]):
+                report = None
+        if report is None or report in fed.values():
+            unknown.append(ds_id)
+        else:
+            fed[ds_id] = report
+    return fed, unknown
+
+
+def _usable(s: Session, report: Report, dataset_id: int, ds_ids: set[int], fed: dict[int, Report],
+            unknown: list[int]) -> tuple[bool, str | None]:
+    """Whether a dashboard can be the report's: it reads the report's dataset, and every other
+    dataset it reads is fed by a report without row-filter rules."""
+    if dataset_id not in ds_ids:
+        return False, "Dashboard does not use this dataset"
+    if unknown:
+        return False, f"Dashboard uses {len(unknown)} other dataset(s) that no DRS report feeds"
+    filtered = [r.report_code for r in fed.values()
+                if r.report_id != report.report_id and bi_members.has_row_filter(s, r.report_id)]
+    if filtered:
+        return False, f"Dashboard reads reports with row filters: {', '.join(filtered)}"
+    return True, None
+
+
+def _may_design(s: Session, rights: DesignRights, report: Report) -> bool:
+    return can_edit_report(rights, report, param_datasource_ids(s, report.report_id))
+
+
+def _catalog(s: Session, database: Database, client: SupersetAdmin, cfg: SupersetSection, user: User,
+             rights: DesignRights, report: Report) -> dict[str, Any]:
+    """What the designer may build on in Superset: the datasets of the reports they may design and
+    the charts on them (an administrator: every chart). ``mine``: a report the user made, a chart
+    the user owns in Superset (``me``: their Superset account, the one with their DRS name)."""
+    try:
+        me = client.user_id(user.username)
+        db_id = client.database_id(cfg.database_name)
+        by_table = {(d["schema"], d["table"]): d["id"] for d in client.dataset_list(db_id)}
+        fed: dict[int, Report] = {}
+        datasets = []
+        for r in s.scalars(select(Report).where(Report.is_active.is_(True), Report.bi_dataset_table.is_not(None))
+                           .order_by(Report.report_code)):
+            if not _may_design(s, rights, r) or s.get(BiDataset, r.report_id) is None:
+                continue
+            ds_id = by_table.get(bi_dataset.physical_name(database, r.bi_dataset_table))
+            if ds_id is None:
+                continue
+            fed[ds_id] = r
+            datasets.append({"id": ds_id, "report": r.report_code, "name": r.report_name, "table": r.bi_dataset_table,
+                             "this": r.report_id == report.report_id, "mine": r.created_by == user.username})
+        charts = []
+        for c in client.chart_list():
+            r = fed.get(c["dataset_id"])
+            if r is None and not rights.is_admin:
+                continue
+            charts.append({"id": c["id"], "title": c["title"], "viz_type": c["viz_type"],
+                           "report": r.report_code if r else None, "dataset": c["dataset_name"],
+                           "this": r is not None and r.report_id == report.report_id,
+                           "mine": me is not None and me in c["owner_ids"],
+                           "url": f"{cfg.base_url}/explore/?slice_id={c['id']}"})
+    except DRSError as exc:
+        return {"me": None, "datasets": [], "charts": [], "error": exc.message, "error_detail": exc.admin_detail}
+    datasets.sort(key=lambda d: (not d["this"], d["report"]))
+    charts.sort(key=lambda c: (not c["this"], c["title"].lower()))
+    return {"me": me, "datasets": datasets, "charts": charts, "error": None, "error_detail": None}
+
+
+def report_dashboards(database: Database, settings: AppSettings | Settings, report_code: str,
+                      user: User | None = None) -> dict[str, Any]:
+    """Returns dataset info and dashboards for the given report.
+
+    With ``user`` (the BI page), only what that designer may see: a dashboard whose every dataset is
+    the dataset of a report they may design, and the datasets and charts of those reports
+    (``catalog``); an administrator sees everything. Each item says whether it is theirs (``mine``)."""
     settings = _app(settings)
     if _is_sqlite(database):
         return {
@@ -529,53 +720,56 @@ def report_dashboards(database: Database, settings: AppSettings | Settings, repo
         linked_uuid = None
         if report.bi_design_uri and report.bi_design_uri.startswith("superset:"):
             linked_uuid = report.bi_design_uri.split(":", 1)[1]
+        info: dict[str, Any] = {"dataset_id": None, "explore_url": "", "role": role, "dashboards": [],
+                                "linked_uuid": linked_uuid}
 
-        if not report.bi_dataset_table:
-            return {"dataset_id": None, "explore_url": "", "role": role, "dashboards": [], "linked_uuid": linked_uuid}
+        client = admin_client(cfg)
+        rights = design_rights(s, user) if user is not None else None
+        me = None
+        owners_known = False  # whose the dashboards are: unknown when Superset's lists failed
+        if user is not None:
+            info["catalog"] = _catalog(s, database, client, cfg, user, rights, report)
+            me, owners_known = info["catalog"]["me"], not info["catalog"]["error"]
 
-        row = s.get(BiDataset, report.report_id)
-        if row is None:
-            return {"dataset_id": None, "explore_url": "", "role": role, "dashboards": [], "linked_uuid": linked_uuid}
+        if not report.bi_dataset_table or s.get(BiDataset, report.report_id) is None:
+            return info
 
         schema, table = bi_dataset.physical_name(database, report.bi_dataset_table)
-        client = admin_client(cfg)
         db_id = client.database_id(cfg.database_name)
         ds = client.find_dataset(db_id, schema, table)
         if ds is None:
-            return {"dataset_id": None, "explore_url": "", "role": role, "dashboards": [], "linked_uuid": linked_uuid}
+            return info
 
         dataset_id = ds["id"]
-        explore_url = f"{cfg.base_url}/explore/?datasource_type=table&datasource_id={dataset_id}"
+        info["dataset_id"] = dataset_id
+        info["explore_url"] = f"{cfg.base_url}/explore/?datasource_type=table&datasource_id={dataset_id}"
         dash_items = client.dashboards_of_dataset(dataset_id)
         dashboards = []
         for d in dash_items:
             did = d["id"]
             title = d.get("title") or d.get("dashboard_title") or f"Dashboard {did}"
             ds_ids = client.dashboard_dataset_ids(did)
-            if ds_ids == {dataset_id}:
-                usable = True
-                reason = None
-            elif dataset_id not in ds_ids:
-                usable = False
-                reason = "Dashboard does not use this dataset"
-            else:
-                usable = False
-                reason = f"Dashboard uses {len(ds_ids - {dataset_id})} other dataset(s)"
-            dashboards.append({
+            fed, unknown = _feeds(s, database, client, db_id, ds_ids - {dataset_id})
+            if rights is not None and not rights.is_admin and (
+                    unknown or not all(_may_design(s, rights, r) for r in fed.values())):
+                continue  # it reads data of a report the designer may not design: not shown
+            usable, reason = _usable(s, report, dataset_id, ds_ids, fed, unknown)
+            item = {
                 "id": did,
                 "title": title,
                 "usable": usable,
                 "reason": reason,
+                # The other reports whose datasets it reads: they run with the report's form.
+                "members": [r.report_code for r in fed.values() if r.report_id != report.report_id],
                 "url": f"{cfg.base_url}/superset/dashboard/{did}/",
-            })
-
-        return {
-            "dataset_id": dataset_id,
-            "explore_url": explore_url,
-            "role": role,
-            "dashboards": dashboards,
-            "linked_uuid": linked_uuid,
-        }
+            }
+            if owners_known:
+                item["mine"] = me is not None and me in client.dashboard_owner_ids(did)
+            elif user is not None:
+                item["mine"] = None  # not filtered out
+            dashboards.append(item)
+        info["dashboards"] = dashboards
+        return info
 
 
 def link_dashboard(
@@ -619,8 +813,14 @@ def link_dashboard(
 
         dataset_id = ds["id"]
         ds_ids = client.dashboard_dataset_ids(dashboard_id)
-        if ds_ids != {dataset_id}:
-            raise DRSError("DRAFT_INVALID", detail={"reason": "other_datasets"})
+        fed, unknown = _feeds(s, database, client, db_id, ds_ids - {dataset_id})
+        usable, _ = _usable(s, report, dataset_id, ds_ids, fed, unknown)
+        if not usable:
+            raise DRSError("DRAFT_INVALID", detail={
+                "reason": "other_datasets" if dataset_id not in ds_ids or unknown else "member_row_filters"})
+        if not rights.is_admin and not all(_may_design(s, rights, r) for r in fed.values()):
+            raise DRSError("DRAFT_INVALID", detail={"reason": "member_forbidden"})
+        fed = {dataset_id: report} | {i: r for i, r in fed.items() if r.report_id != report.report_id}
 
         base_url = _base_url(settings)
         parts = urllib.parse.urlsplit(base_url)
@@ -630,11 +830,23 @@ def link_dashboard(
         before_uri = report.bi_design_uri
         report.bi_design_uri = f"superset:{uuid}"
         report.updated_by = user.username
+        # The datasets of the dashboard and the reports that feed them; the parameters put on the
+        # form stay for the reports that are still among them.
+        s.execute(delete(ReportBiMember).where(ReportBiMember.report_id == report.report_id))
+        for i, (ds_id, r) in enumerate(fed.items()):
+            s.add(ReportBiMember(report_id=report.report_id, member_report_id=r.report_id, dataset_id=ds_id,
+                                 sort_order=i))
+        s.execute(delete(ReportBiParam).where(
+            ReportBiParam.report_id == report.report_id,
+            ReportBiParam.member_report_id.not_in([r.report_id for r in fed.values()])))
         s.flush()
 
         audit(s, user.username, "BI_LINK", "drs_report", report.report_code,
-              before={"bi_design_uri": before_uri}, after={"bi_design_uri": report.bi_design_uri})
+              before={"bi_design_uri": before_uri},
+              after={"bi_design_uri": report.bi_design_uri,
+                     "members": [r.report_code for r in fed.values() if r.report_id != report.report_id]})
         clear_dashboard_cache(uuid)
+        bi_members.clear_datasets_cache(uuid)
         return uuid
 
 
@@ -663,11 +875,71 @@ def unlink_dashboard(
         before_uri = report.bi_design_uri
         report.bi_design_uri = None
         report.updated_by = user.username
+        s.execute(delete(ReportBiMember).where(ReportBiMember.report_id == report.report_id))
         s.flush()
 
         audit(s, user.username, "BI_UNLINK", "drs_report", report.report_code,
               before={"bi_design_uri": before_uri}, after={"bi_design_uri": None})
+        bi_members.clear_datasets_cache()
         return "unlinked"
+
+
+def save_dashboard_params(
+    database: Database,
+    settings: AppSettings | Settings,
+    user: User,
+    report_code: str,
+    picks: list[str],
+) -> list[str]:
+    """Puts these parameters of the dashboard's other reports on the report's form (``CODE.param``,
+    in this order); the others run with their default value (``bi_members.save_picks``)."""
+    with database.session() as s:
+        report = s.scalars(select(Report).where(Report.report_code == report_code)).one_or_none()
+        if report is None:
+            raise DRSError("REPORT_NOT_FOUND")
+
+        rights = design_rights(s, user)
+        if not can_edit_report(rights, report, param_datasource_ids(s, report.report_id)):
+            raise DRSError("DESIGN_FORBIDDEN")
+        if report.group_id not in rights.publish_group_ids:
+            raise DRSError("DESIGN_FORBIDDEN")
+
+        before = [f"{code}.{name}" for code, name in bi_members.panel(s, report).picks]
+        saved = bi_members.save_picks(s, report, picks)
+        audit(s, user.username, "BI_PARAMS", "drs_report", report.report_code,
+              before={"params": before}, after={"params": saved})
+        return saved
+
+
+def make_dataset(database: Database, settings: AppSettings | Settings, user: User, report_code: str) -> str:
+    """The BI page's "Create BI dataset": names the report's dataset table when it has none (as
+    publishing a draft does - a report made in the administration pages has none), runs the
+    report with its default parameters into it, and makes the dataset in Superset."""
+    settings = _app(settings)
+    if _is_sqlite(database):
+        return "not available on SQLite"
+    from drscore.reports.service import get_result, prepare
+
+    with database.session() as s:
+        report = s.scalars(select(Report).where(Report.report_code == report_code)).one_or_none()
+        if report is None:
+            raise DRSError("REPORT_NOT_FOUND")
+        rights = design_rights(s, user)
+        if not _may_design(s, rights, report) or report.group_id not in rights.publish_group_ids:
+            raise DRSError("DESIGN_FORBIDDEN")
+        if not report.bi_dataset_table:
+            # Kept when the run below fails: a run with chosen values then fills the table.
+            report.bi_dataset_table = table_name(s, report.report_code, report.report_id)
+            report.updated_by = user.username
+            audit(s, user.username, "UPDATE", "drs_report", report.report_code,
+                  before={"bi_dataset_table": None}, after={"bi_dataset_table": report.bi_dataset_table})
+        report_id, table = report.report_id, report.bi_dataset_table
+
+    with database.session() as s:
+        prep = prepare(s, s.get(Report, report_id), {}, settings)  # PARAM_INVALID: a required one has no default
+    outcome = get_result(database, prep, settings, username=user.username)
+    bi_dataset.refresh(database, report_id, table, outcome)
+    return sync_report(database, settings, report_id)
 
 
 def superset_urls(

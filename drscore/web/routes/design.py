@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from drscore.authz.design import can_edit_report, design_rights, param_datasource_ids, DesignRights
+from drscore.bi import members as bi_members
 from drscore.bi import selfservice
 from drscore.db import get_database
 from drscore.db.models import BiDataset, COLUMN_DATA_TYPES, Datasource, Report, ReportDraft, ReportGroup, User
@@ -604,12 +605,15 @@ def report_bi(code: str, request: Request, user: User = Depends(current_user), s
     superset_error = None
     if self_service_on:
         try:
-            bi_info = selfservice.report_dashboards(database, settings, code)
+            bi_info = selfservice.report_dashboards(database, settings, code, user)
         except DRSError as exc:
             if exc.code == "BI_ENGINE_UNAVAILABLE":
                 superset_error = f"{exc.message}: {exc.admin_detail}" if (user.is_admin and exc.admin_detail) else exc.message
             else:
                 raise
+
+    # The form of a dashboard that also reads the datasets of other reports.
+    dashboard_form = bi_members.designer_view(session, report) if self_service_on and report.bi_design_uri else None
 
     msg = request.query_params.get("msg")
     sync_outcome = request.query_params.get("sync_outcome")
@@ -617,8 +621,28 @@ def report_bi(code: str, request: Request, user: User = Depends(current_user), s
         request, "design_bi.html",
         code=code, report=report, can_publish=can_publish, self_service_on=self_service_on,
         bi_dataset_ready=bi_dataset_ready, bi_info=bi_info, superset_error=superset_error,
-        msg=msg, sync_outcome=sync_outcome,
+        msg=msg, msg_detail=request.query_params.get("detail"), sync_outcome=sync_outcome,
+        dashboard_form=dashboard_form,
+        # The dashboards, charts and datasets in Superset: the user's own ones unless "all".
+        show_all=request.query_params.get("all") == "1",
     )
+
+
+@router.post("/design/reports/{code}/bi/dataset")
+def make_report_dataset(code: str, request: Request, user: User = Depends(current_user)):
+    """Names the report's dataset table if it has none, fills it and makes the Superset dataset."""
+    try:
+        outcome = selfservice.make_dataset(get_database(), get_settings().app, user, code)
+    except DRSError as exc:
+        if exc.code == "BI_ENGINE_UNAVAILABLE":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=bi_unavailable", status_code=303)
+        if exc.code == "PARAM_INVALID":
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=dataset_needs_params", status_code=303)
+        if exc.code in ("DESIGN_FORBIDDEN", "REPORT_NOT_FOUND"):
+            raise
+        return RedirectResponse(f"/design/reports/{code}/bi?msg=dataset_failed&detail={quote(exc.code)}",
+                                status_code=303)
+    return RedirectResponse(f"/design/reports/{code}/bi?sync_outcome={quote(outcome)}", status_code=303)
 
 
 @router.post("/design/reports/{code}/bi/link")
@@ -645,6 +669,27 @@ async def link_report_dashboard(code: str, request: Request, user: User = Depend
         raise
     session.commit()
     return RedirectResponse(f"/design/reports/{code}/bi?msg=linked", status_code=303)
+
+
+@router.post("/design/reports/{code}/bi/params")
+async def save_dashboard_params(code: str, request: Request, user: User = Depends(current_user),
+                                session: Session = Depends(db_session)):
+    """The parameters of the dashboard's other reports put on the report's form, in their order."""
+    rights = design_rights(session, user)
+    if not rights.is_designer:
+        raise DRSError("DESIGN_FORBIDDEN")
+
+    form = await request.form()
+    picks = [str(v) for v in form.getlist("pick")]
+    try:
+        selfservice.save_dashboard_params(get_database(), get_settings().app, user, code, picks)
+    except DRSError as exc:  # a refusal the designer can act on: say why on the BI page
+        if exc.code == "DRAFT_INVALID" and isinstance(exc.detail, dict) and exc.detail.get("reason"):
+            detail = ", ".join(exc.detail.get("params") or [exc.detail.get("param") or ""]).strip(", ")
+            return RedirectResponse(f"/design/reports/{code}/bi?msg=params_{exc.detail['reason']}"
+                                    f"&detail={quote(detail)}", status_code=303)
+        raise
+    return RedirectResponse(f"/design/reports/{code}/bi?msg=params_saved", status_code=303)
 
 
 @router.post("/design/reports/{code}/bi/unlink")

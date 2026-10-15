@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
-from drscore.datasources.connectors import SourceInfo, engines
+from drscore.datasources.connectors import SourceInfo, engines, set_autocommit
 from drscore.errors import DRSError
 from drscore.reports import normalize
 from drscore.reports.params import ParamDef, bind_values, binds_of
@@ -56,6 +56,20 @@ def _is_timeout(exc: DBAPIError, dialect: str, timed_out: bool) -> bool:
     if dialect == "oracle":  # call timeout exceeded / user requested cancel
         return any(code in str(orig) for code in ("DPY-4024", "DPY-4011", "ORA-03156", "ORA-01013"))
     return False
+
+
+def _back_to_autocommit(conn, raw) -> None:
+    """In manual-commit mode the SQL Server drivers open a new transaction at once after every
+    rollback (the ODBC driver itself; pymssql with BEGIN TRAN), and the connection kept it open
+    while it waited in the pool: for days (2026-10-15: a sleeping drs-report session on a
+    production source, its transaction open for 66 hours). Rolled back once more, then
+    autocommit: that empty transaction ends and none is opened until the next run. A connection
+    that cannot be put back so is closed, never returned to the pool."""
+    try:
+        raw.rollback()
+        set_autocommit(raw, True)
+    except Exception:  # a broken connection: closing it ends its transaction on the server
+        conn.invalidate()
 
 
 def ping_sql(db_type: str) -> str:
@@ -117,6 +131,8 @@ def run_query(src: SourceInfo, query_text: str, defs: Sequence[ParamDef], values
                     raw.set_progress_handler(progress, 10000)
                 elif dialect == "mssql" and hasattr(raw, "timeout"):
                     raw.timeout = int(timeout_seconds)  # pyodbc query timeout
+                if dialect == "mssql":
+                    set_autocommit(raw, False)  # the run is one transaction, rolled back below
 
                 result = conn.execute(stmt, params)
                 if not result.returns_rows:
@@ -149,27 +165,35 @@ def run_query(src: SourceInfo, query_text: str, defs: Sequence[ParamDef], values
             finally:
                 # A report is a read operation. Close the cursor, reset driver state, and roll back
                 # before the pooled connection is returned, on success and on every error path.
-                try:
-                    if result is not None:
-                        result.close()
-                finally:
+                # A connection SQLAlchemy invalidated (on SQL Server a query time-out counts as a
+                # disconnect) is closed already, and the server ended its transaction: any use of
+                # it would raise "Attempt to use a closed connection" instead of the real error.
+                if not conn.invalidated:
                     try:
-                        if dialect == "sqlite":
-                            raw.set_progress_handler(None, 0)
-                        elif dialect == "mssql" and hasattr(raw, "timeout"):
-                            raw.timeout = 0
-                        elif dialect == "oracle":
-                            raw.call_timeout = 0
+                        if result is not None:
+                            result.close()
                     finally:
-                        if transaction.is_active:
-                            transaction.rollback()
+                        try:
+                            if dialect == "sqlite":
+                                raw.set_progress_handler(None, 0)
+                            elif dialect == "mssql" and hasattr(raw, "timeout"):
+                                raw.timeout = 0
+                            elif dialect == "oracle":
+                                raw.call_timeout = 0
+                        finally:
+                            try:
+                                if transaction.is_active:
+                                    transaction.rollback()
+                            finally:
+                                if dialect == "mssql":
+                                    _back_to_autocommit(conn, raw)
     except DRSError:
         raise
     except DBAPIError as exc:
+        if _is_timeout(exc, dialect, timed_out):  # before "invalidated": see above
+            raise DRSError("SOURCE_TIMEOUT", admin_detail=f"more than {timeout_seconds} s") from exc
         if exc.connection_invalidated:
             raise DRSError("DATASOURCE_UNAVAILABLE", admin_detail=f"datasource {src.code}: {_short(exc)}") from exc
-        if _is_timeout(exc, dialect, timed_out):
-            raise DRSError("SOURCE_TIMEOUT", admin_detail=f"more than {timeout_seconds} s") from exc
         raise DRSError("SOURCE_QUERY_FAILED", admin_detail=_short(exc)) from exc
     except SQLAlchemyError as exc:
         raise DRSError("SOURCE_QUERY_FAILED", admin_detail=_short(exc)) from exc

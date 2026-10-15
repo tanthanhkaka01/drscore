@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ from drscore.db.engine import Database
 from drscore.db.models import (
     AccessLog,
     AuditLog,
+    BiDataset,
     Datasource,
     GrantDatasource,
     GrantGroup,
@@ -272,9 +274,33 @@ class ReportAdmin(AuditedView, model=Report):
             obj.created_by = actor
         obj.updated_by = actor
 
+    async def on_model_change(self, data, model, is_created, request):
+        await super().on_model_change(data, model, is_created, request)
+        from drscore.bi import selfservice
+
+        # Self-service: a report made or saved here gets its BI dataset table as a published draft
+        # does; without one it has no dataset to design a dashboard on.
+        if selfservice.is_on(self.settings) and not (data.get("bi_dataset_table") or "").strip():
+            def name():
+                with self.database.session() as s:
+                    return selfservice.table_name(s, data["report_code"], None if is_created else model.report_id)
+            data["bi_dataset_table"] = await run_in_threadpool(name)
+
     async def after_model_change(self, data, model, is_created, request):
         await super().after_model_change(data, model, is_created, request)
         await self._flash_findings(request, model.report_id)
+        from drscore.bi import selfservice
+
+        def without_dataset():
+            with self.database.session() as s:
+                report = s.get(Report, model.report_id)
+                return bool(report and report.is_active and report.bi_dataset_table
+                            and s.get(BiDataset, report.report_id) is None)
+        if selfservice.is_on(self.settings) and await run_in_threadpool(without_dataset):
+            # As after publishing: the report runs with its default parameters into its dataset.
+            threading.Thread(target=selfservice.prepare_dataset,
+                             args=(self.database, self.settings, model.report_code, self.actor(request)),
+                             daemon=True).start()
 
     async def _flash_findings(self, request: Request, report_id: int) -> None:
         from drscore.reports.validate import check_report
@@ -344,6 +370,7 @@ class ReportAdmin(AuditedView, model=Report):
         "BI dataset table" (what ``cache warm`` does). A dashboard is designed on that table, and
         until the dashboard is registered the report has no Dashboard tab that would create it."""
         from drscore.bi import dataset as bi_dataset
+        from drscore.bi import selfservice
         from drscore.reports.service import get_result, prepare
 
         for pk in _pks(request):
@@ -353,6 +380,12 @@ class ReportAdmin(AuditedView, model=Report):
                     with self.database.session() as s:
                         report = s.get(Report, report_id)
                         code, table = report.report_code, report.bi_dataset_table
+                        if not table and selfservice.is_on(self.settings):
+                            # Self-service names it, as for a published draft.
+                            table = report.bi_dataset_table = selfservice.table_name(s, code, report_id)
+                            report.updated_by = self.actor(request)
+                            audit(s, self.actor(request), "UPDATE", "drs_report", code,
+                                  before={"bi_dataset_table": None}, after={"bi_dataset_table": table})
                         if not table:
                             return code, "warning", 'fill in "BI dataset table" first'
                         prep = prepare(s, report, {}, self.settings)

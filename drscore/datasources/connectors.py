@@ -107,6 +107,14 @@ def _mssql_skip_rowcount_results(conn, cursor, statement, parameters, context, e
         pass
 
 
+def set_autocommit(dbapi_connection, on: bool) -> None:
+    """Autocommit of a SQL Server connection: an attribute in pyodbc, a method in pymssql."""
+    if callable(dbapi_connection.autocommit):
+        dbapi_connection.autocommit(on)
+    else:
+        dbapi_connection.autocommit = on
+
+
 def _odbc_value(value: str) -> str:
     """A value in an ODBC connection string, braced so ; = { } in a password are safe."""
     return "{" + str(value).replace("}", "}}") + "}"
@@ -203,6 +211,9 @@ def build_engine(src: SourceInfo) -> Engine:
     engine = create_engine(spec.url, connect_args=spec.connect_args, **spec.engine_args)
     if src.db_type == "mssql":
         event.listen(engine, "after_cursor_execute", _mssql_skip_rowcount_results)
+        # Autocommit except while a report runs (executor.run_query): in manual-commit mode both
+        # drivers keep a transaction open on a connection that waits in the pool.
+        event.listen(engine, "connect", lambda dbapi_connection, _record: set_autocommit(dbapi_connection, True))
     if spec.on_connect:
         statements = list(spec.on_connect)
 

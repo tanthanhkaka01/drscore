@@ -47,16 +47,18 @@
   <div class="card-body">
     <div class="row g-3 align-items-end">
       {% for p in definition.params %}
-      <div class="col-sm-6 col-lg-3">
+      {# An input of the dashboard's other reports is on the form of that tab only (data-for-view). #}
+      <div class="col-sm-6 col-lg-3{% if p.view %} d-none{% endif %}"{% if p.view %} data-for-view="{{ p.view }}"{% endif %}>
         {% set id = 'p-' ~ p.name %}
+        {% set source %}{% if p.source %} <span class="text-secondary small fw-normal">· {{ p.source }}</span>{% endif %}{% endset %}
         {% if p.data_type == 'bool' and p.input_kind == 'input' %}
         <label class="form-check form-switch mb-2">
           <input class="form-check-input" type="checkbox" id="{{ id }}" name="{{ p.name }}" data-kind="bool"
                  {% if p.default == 'true' %}checked{% endif %}>
-          <span class="form-check-label">{{ p.label }}</span>
+          <span class="form-check-label">{{ p.label }}{{ source }}</span>
         </label>
         {% else %}
-        <label class="form-label {% if p.required %}required{% endif %}" for="{{ id }}">{{ p.label }}</label>
+        <label class="form-label {% if p.required %}required{% endif %}" for="{{ id }}">{{ p.label }}{{ source }}</label>
         {% if p.input_kind in ('select', 'multiselect') %}
         {# Options that depend on other parameters (its options query uses them): htmx asks for the
            list again when one of them changes - by hand or because its own list was replaced - and

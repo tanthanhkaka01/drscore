@@ -17,6 +17,7 @@ from drscore.web import views
 from drscore.web.deps import client_ip, current_session, current_user, db_session
 from drscore.web.i18n import request_locale, translate
 from drscore.web.schemas import (
+    BiMembersRequest,
     BiTokenRequest,
     MeResponse,
     MenuResponse,
@@ -83,7 +84,16 @@ def report_bi_token(code: str, request: Request, body: BiTokenRequest | None = N
     """Guest token for the embedded dashboard (asked by the Superset embedded SDK), for the snapshot
     on the user's screen when the dashboard reads the report's dataset."""
     return {"token": views.bi_token(get_database(), get_settings().app, user.username, code, client_ip(request),
-                                    snapshot_id=body.snapshot_id if body else None)}
+                                    snapshot_id=body.snapshot_id if body else None,
+                                    members=body.members if body else None)}
+
+
+@router.post("/api/reports/{code}/bi-members")
+def report_bi_members(code: str, body: BiMembersRequest, request: Request, user: User = Depends(current_user)) -> dict:
+    """Runs the other reports the embedded dashboard reads, with the form as it was run: the
+    snapshot of each, which the dashboard is then shown for (bi-token)."""
+    return {"members": views.bi_members_run(get_database(), get_settings().app, user.username, code, body.params,
+                                            body.refresh, client_ip(request))}
 
 
 @router.get("/api/reports/{code}/export")

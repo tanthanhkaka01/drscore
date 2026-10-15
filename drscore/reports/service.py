@@ -271,7 +271,8 @@ def run_for_user(database: Database, settings: AppSettings, username: str, repor
 
     ``view`` (grid / html; the report's default when None) is checked first: a view the report
     does not offer, or whose design is missing, never reaches the source. Every view of a report
-    reads the same snapshot."""
+    reads the same snapshot. ``dataset``: the report runs for the dashboard of another report,
+    which reads its BI dataset (``drscore.bi.members``) - none of its own views is shown."""
     started = time.perf_counter()
     canonical_params: Any = raw_params
     try:
@@ -282,8 +283,14 @@ def run_for_user(database: Database, settings: AppSettings, username: str, repor
             report, access = require_report(s, user, report_code)
             if refresh and not access.can_refresh:
                 raise DRSError("REFRESH_NOT_ALLOWED")
-            chosen = design.require_view(report, view)
-            design.check(s, report, settings, chosen)  # no design, no view - and no source run
+            if view == "dataset":
+                if not report.bi_dataset_table:
+                    raise DRSError("REPORT_MISCONFIGURED", admin_detail=(
+                        f"{report.report_code} feeds a dashboard but has no bi_dataset_table"))
+                chosen = view
+            else:
+                chosen = design.require_view(report, view)
+                design.check(s, report, settings, chosen)  # no design, no view - and no source run
             prep = prepare(s, report, raw_params, settings, user_attributes=user_attributes(s, user))
             canonical_params = prep.params_canonical
             report_info = {"code": report.report_code, "name": report.report_name, "type": report.report_type,
