@@ -49,13 +49,13 @@
               <td>{{ d.content_json.get('report_name', '') }}</td>
               <td>
                 {% if d.status == 'DRAFT' %}
-                <span class="badge bg-secondary">{{ t('design.status_DRAFT') }}</span>
+                <span class="badge bg-secondary text-secondary-fg">{{ t('design.status_DRAFT') }}</span>
                 {% elif d.status == 'PENDING' %}
-                <span class="badge bg-warning">{{ t('design.status_PENDING') }}</span>
+                <span class="badge bg-warning text-warning-fg">{{ t('design.status_PENDING') }}</span>
                 {% elif d.status == 'APPROVED' %}
-                <span class="badge bg-success">{{ t('design.status_APPROVED') }}</span>
+                <span class="badge bg-success text-success-fg">{{ t('design.status_APPROVED') }}</span>
                 {% elif d.status == 'REJECTED' %}
-                <span class="badge bg-danger">{{ t('design.status_REJECTED') }}</span>
+                <span class="badge bg-danger text-danger-fg">{{ t('design.status_REJECTED') }}</span>
                 {% endif %}
               </td>
               <td class="text-secondary">{{ d.author }}</td>

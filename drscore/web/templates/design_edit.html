@@ -16,13 +16,13 @@
 <div class="btn-list">
   {% if not is_new and draft %}
     {% if draft.status == 'DRAFT' %}
-    <span class="badge bg-secondary me-2 fs-3">{{ t('design.status_DRAFT') }}</span>
+    <span class="badge bg-secondary text-secondary-fg me-2 fs-3">{{ t('design.status_DRAFT') }}</span>
     {% elif draft.status == 'PENDING' %}
-    <span class="badge bg-warning me-2 fs-3">{{ t('design.status_PENDING') }}</span>
+    <span class="badge bg-warning text-warning-fg me-2 fs-3">{{ t('design.status_PENDING') }}</span>
     {% elif draft.status == 'APPROVED' %}
-    <span class="badge bg-success me-2 fs-3">{{ t('design.status_APPROVED') }}</span>
+    <span class="badge bg-success text-success-fg me-2 fs-3">{{ t('design.status_APPROVED') }}</span>
     {% elif draft.status == 'REJECTED' %}
-    <span class="badge bg-danger me-2 fs-3">{{ t('design.status_REJECTED') }}</span>
+    <span class="badge bg-danger text-danger-fg me-2 fs-3">{{ t('design.status_REJECTED') }}</span>
     {% endif %}
 
     {% if auth and draft.author == auth.username and draft.status == 'PENDING' %}
@@ -140,18 +140,18 @@
     {% if diff.params.added or diff.params.removed or diff.params.changed %}
     <div class="mb-3">
       <strong>{{ t('design.params') }}:</strong>
-      {% if diff.params.added %}<span class="badge bg-green me-1">+ {{ diff.params.added|join(', ') }}</span>{% endif %}
-      {% if diff.params.removed %}<span class="badge bg-red me-1">- {{ diff.params.removed|join(', ') }}</span>{% endif %}
-      {% if diff.params.changed %}<span class="badge bg-blue me-1">~ {{ diff.params.changed|join(', ') }}</span>{% endif %}
+      {% if diff.params.added %}<span class="badge bg-green text-green-fg me-1">+ {{ diff.params.added|join(', ') }}</span>{% endif %}
+      {% if diff.params.removed %}<span class="badge bg-red text-red-fg me-1">- {{ diff.params.removed|join(', ') }}</span>{% endif %}
+      {% if diff.params.changed %}<span class="badge bg-blue text-blue-fg me-1">~ {{ diff.params.changed|join(', ') }}</span>{% endif %}
     </div>
     {% endif %}
 
     {% if diff.columns.added or diff.columns.removed or diff.columns.changed %}
     <div class="mb-3">
       <strong>{{ t('design.columns') }}:</strong>
-      {% if diff.columns.added %}<span class="badge bg-green me-1">+ {{ diff.columns.added|join(', ') }}</span>{% endif %}
-      {% if diff.columns.removed %}<span class="badge bg-red me-1">- {{ diff.columns.removed|join(', ') }}</span>{% endif %}
-      {% if diff.columns.changed %}<span class="badge bg-blue me-1">~ {{ diff.columns.changed|join(', ') }}</span>{% endif %}
+      {% if diff.columns.added %}<span class="badge bg-green text-green-fg me-1">+ {{ diff.columns.added|join(', ') }}</span>{% endif %}
+      {% if diff.columns.removed %}<span class="badge bg-red text-red-fg me-1">- {{ diff.columns.removed|join(', ') }}</span>{% endif %}
+      {% if diff.columns.changed %}<span class="badge bg-blue text-blue-fg me-1">~ {{ diff.columns.changed|join(', ') }}</span>{% endif %}
     </div>
     {% endif %}
 
