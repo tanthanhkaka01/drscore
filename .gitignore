@@ -49,3 +49,9 @@ DRS_dynamic_report_system_spec.md
 # Local assistant files: session settings record the commands that were run, passwords included.
 .claude/
 CLAUDE.md
+
+# The designer guide illustrated on the internal trial server (screenshots, internal names) stays
+# private; docs/user-guide-designer-public.md (+ .pdf) is the shareable copy.
+docs/user-guide-designer.md
+docs/user-guide-designer.pdf
+docs/images/
