@@ -142,7 +142,8 @@ def cmd_user_add(args: argparse.Namespace) -> int:
     with _admin_session() as s:
         user = _admin_call(admin.add_user, s, cli_actor(), _app_settings(), args.username,
                            args.display_name or args.username, password=password, email=args.email,
-                           sso_subject=args.sso_subject, is_admin=args.admin)
+                           sso_subject=args.sso_subject, is_admin=args.admin,
+                           superset_username=args.superset_username)
         print(f"User {user.username} added{' (admin)' if user.is_admin else ''}"
               f"{'' if password else ' without a password'}.")
     return 0
@@ -153,11 +154,11 @@ def cmd_user_list(args: argparse.Namespace) -> int:
 
     with _admin_session() as s:
         users = admin.list_users(s)
-        print(f"{'USERNAME':<24} {'DISPLAY NAME':<30} {'ADMIN':<6} {'ACTIVE':<7} {'PASSWORD':<9} SSO")
+        print(f"{'USERNAME':<24} {'DISPLAY NAME':<30} {'ADMIN':<6} {'ACTIVE':<7} {'PASSWORD':<9} {'SSO':<24} SUPERSET")
         for u in users:
             print(f"{u.username:<24} {u.display_name[:30]:<30} {'yes' if u.is_admin else 'no':<6} "
                   f"{'yes' if u.is_active else 'no':<7} {'set' if u.password_hash else '-':<9} "
-                  f"{u.sso_subject or '-'}")
+                  f"{u.sso_subject or '-':<24} {u.superset_username or '-'}")
         print(f"{len(users)} user(s).")
     return 0
 
@@ -191,6 +192,20 @@ def cmd_user_set_admin(args: argparse.Namespace) -> int:
     with _admin_session() as s:
         user = _admin_call(admin.set_user_admin, s, cli_actor(), args.username, not args.off)
         print(f"User {user.username} is {'now' if user.is_admin else 'no longer'} an admin.")
+    return 0
+
+
+def cmd_user_set_superset(args: argparse.Namespace) -> int:
+    from drscore.admin import service as admin
+    from drscore.audit import cli_actor
+
+    if bool(args.superset_username) == args.clear:
+        raise CommandError("Give the Superset account name, or --clear.")
+    with _admin_session() as s:
+        user = _admin_call(admin.set_user_superset, s, cli_actor(), args.username,
+                           None if args.clear else args.superset_username)
+        print(f"User {user.username}: Superset account {user.superset_account}"
+              f"{'' if user.superset_username else ' (the DRS user name)'}.")
     return 0
 
 
@@ -424,6 +439,7 @@ def _add_user_parsers(sub) -> None:
     p.add_argument("--display-name")
     p.add_argument("--email")
     p.add_argument("--sso-subject", help="value of the SSO match claim for this user")
+    p.add_argument("--superset-username", help="their Superset account, when not named like the DRS user")
     p.add_argument("--admin", action="store_true")
     p.add_argument("--no-password", action="store_true", help="no password login (SSO only)")
     _password_option(p)
@@ -439,6 +455,12 @@ def _add_user_parsers(sub) -> None:
     p.add_argument("username")
     _password_option(p)
     p.set_defaults(handler=cmd_user_set_password)
+
+    p = user.add_parser("set-superset", help="link a user's Superset account (--clear: the one named like the user)")
+    p.add_argument("username")
+    p.add_argument("superset_username", nargs="?")
+    p.add_argument("--clear", action="store_true")
+    p.set_defaults(handler=cmd_user_set_superset)
 
     p = user.add_parser("set-admin", help="make a user an admin (--off to remove)")
     p.add_argument("username")

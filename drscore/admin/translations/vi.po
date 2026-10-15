@@ -37,6 +37,9 @@ msgstr "Trang"
 msgid "Permissions"
 msgstr "Quyền"
 
+msgid "Superset account"
+msgstr "Tài khoản Superset"
+
 msgid "You are not allowed to grant: %(permissions)s"
 msgstr "Bạn không được cấp: %(permissions)s"
 
@@ -584,3 +587,10 @@ msgstr "Bảng"
 
 msgid "Time"
 msgstr "Thời gian"
+
+msgid ""
+"The user's account in Superset, when they sign in there with another name. "
+"Empty: the Superset account named like the DRS user."
+msgstr ""
+"Tài khoản của người dùng trong Superset, khi họ đăng nhập Superset bằng tên khác. "
+"Để trống: tài khoản Superset trùng tên với user DRS."

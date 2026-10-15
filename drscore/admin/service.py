@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select, true
 from sqlalchemy.orm import Session
 
 from drscore.audit import audit
@@ -41,8 +41,8 @@ class AdminError(Exception):
 
 def _user_json(u: User) -> dict[str, Any]:
     return {"username": u.username, "display_name": u.display_name, "email": u.email,
-            "sso_subject": u.sso_subject, "is_admin": u.is_admin, "is_active": u.is_active,
-            "must_change_password": u.must_change_password}
+            "sso_subject": u.sso_subject, "superset_username": u.superset_username, "is_admin": u.is_admin,
+            "is_active": u.is_active, "must_change_password": u.must_change_password}
 
 
 def get_user(session: Session, username: str) -> User:
@@ -50,6 +50,25 @@ def get_user(session: Session, username: str) -> User:
     if user is None:
         raise AdminError(f"No user {username!r}.")
     return user
+
+
+def check_superset_account(session: Session, username: str, superset_username: str | None,
+                           user_id: int | None = None) -> str | None:
+    """The Superset account to link to a user (``None``: the one with their DRS name), refused when it
+    is already another DRS user's, linked or by name: "Mine" on the BI page would show one person's
+    charts to the other. ``user_id``: the user being changed (None for a new one)."""
+    value = (superset_username or "").strip() or None
+    if value == username:
+        value = None  # their DRS name: the same account, and it follows a rename
+    if value is not None and len(value) > 100:
+        raise AdminError("A Superset account name is at most 100 characters.")
+    account = value or username
+    other = session.scalars(select(User).where(
+        or_(User.superset_username == account, and_(User.superset_username.is_(None), User.username == account)),
+        User.user_id != user_id if user_id is not None else true())).first()
+    if other is not None:
+        raise AdminError(f"Superset account {account!r} is already the account of DRS user {other.username!r}.")
+    return value
 
 
 def get_role(session: Session, code: str) -> Role:
@@ -64,7 +83,7 @@ def get_role(session: Session, code: str) -> Role:
 
 def add_user(session: Session, actor: str, settings: AppSettings, username: str, display_name: str,
              password: str | None = None, email: str | None = None, sso_subject: str | None = None,
-             is_admin: bool = False) -> User:
+             is_admin: bool = False, superset_username: str | None = None) -> User:
     username = auth.normalise_username(username)
     if not USERNAME_RE.match(username):
         raise AdminError("A user name is 1 to 100 characters: letters, digits, '.', '_', '@', '-'.")
@@ -72,8 +91,9 @@ def add_user(session: Session, actor: str, settings: AppSettings, username: str,
         raise AdminError(f"User {username!r} already exists.")
     if sso_subject and session.scalars(select(User).where(User.sso_subject == sso_subject)).first():
         raise AdminError(f"SSO subject {sso_subject!r} is already used by another user.")
+    superset_username = check_superset_account(session, username, superset_username)
     user = User(username=username, display_name=display_name or username, email=email or None,
-                sso_subject=sso_subject or None, is_admin=is_admin)
+                sso_subject=sso_subject or None, is_admin=is_admin, superset_username=superset_username)
     session.add(user)
     session.flush()
     if password is not None:
@@ -134,6 +154,15 @@ def set_user_admin(session: Session, actor: str, username: str, is_admin: bool) 
     before = _user_json(user)
     user.is_admin = is_admin
     audit(session, actor, "USER_SET_ADMIN", "user", user.username, before=before, after=_user_json(user))
+    return user
+
+
+def set_user_superset(session: Session, actor: str, username: str, superset_username: str | None) -> User:
+    """Links the user's Superset account (``None``: the one with their DRS name)."""
+    user = get_user(session, username)
+    before = _user_json(user)
+    user.superset_username = check_superset_account(session, user.username, superset_username, user.user_id)
+    audit(session, actor, "USER_SET_SUPERSET", "user", user.username, before=before, after=_user_json(user))
     return user
 
 

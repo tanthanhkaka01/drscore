@@ -439,6 +439,14 @@ def import_metadata(s: Session, data: MetadataFile, actor: str) -> ImportResult:
             values.pop("is_admin", None)  # an import never changes who is an administrator
         elif values.get("is_admin"):
             imp.result.notes.append(f"user {u.username}: created as administrator, without a password")
+        if "superset_username" in values:
+            from drscore.admin.service import AdminError, check_superset_account
+
+            try:
+                values["superset_username"] = check_superset_account(
+                    s, u.username, values["superset_username"], existing.user_id if existing else None)
+            except AdminError as exc:
+                raise MetadataError(f"user {u.username}: {exc}") from exc
         user = imp.upsert(User, {"username": u.username}, values, f"user {u.username}")
         have = {(a.attr_name, a.attr_value) for a in user.attributes}
         for name, attr_values in u.attributes.items():

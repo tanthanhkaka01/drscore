@@ -405,7 +405,7 @@ class SupersetAdminClient:
         return items
 
     def user_id(self, username: str) -> int | None:
-        """The Superset account of that name (a designer signs in to Superset with their DRS name)."""
+        """The Superset account of that name (``User.superset_account``: the designer's)."""
         q = f"(filters:!((col:username,opr:eq,value:{_rison(username)})))"
         r = self._request("GET", f"/api/v1/security/users/?q={urllib.parse.quote(q)}")
         if r.status_code != 200:
@@ -658,9 +658,11 @@ def _catalog(s: Session, database: Database, client: SupersetAdmin, cfg: Superse
              rights: DesignRights, report: Report) -> dict[str, Any]:
     """What the designer may build on in Superset: the datasets of the reports they may design and
     the charts on them (an administrator: every chart). ``mine``: a report the user made, a chart
-    the user owns in Superset (``me``: their Superset account, the one with their DRS name)."""
+    the user owns in Superset (``me``: the id of their Superset account, ``account`` its name: the
+    one linked on the user, else the one with their DRS name)."""
+    account = user.superset_account
     try:
-        me = client.user_id(user.username)
+        me = client.user_id(account)
         db_id = client.database_id(cfg.database_name)
         by_table = {(d["schema"], d["table"]): d["id"] for d in client.dataset_list(db_id)}
         fed: dict[int, Report] = {}
@@ -686,10 +688,11 @@ def _catalog(s: Session, database: Database, client: SupersetAdmin, cfg: Superse
                            "mine": me is not None and me in c["owner_ids"],
                            "url": f"{cfg.base_url}/explore/?slice_id={c['id']}"})
     except DRSError as exc:
-        return {"me": None, "datasets": [], "charts": [], "error": exc.message, "error_detail": exc.admin_detail}
+        return {"me": None, "account": account, "datasets": [], "charts": [], "error": exc.message,
+                "error_detail": exc.admin_detail}
     datasets.sort(key=lambda d: (not d["this"], d["report"]))
     charts.sort(key=lambda c: (not c["this"], c["title"].lower()))
-    return {"me": me, "datasets": datasets, "charts": charts, "error": None, "error_detail": None}
+    return {"me": me, "account": account, "datasets": datasets, "charts": charts, "error": None, "error_detail": None}
 
 
 def report_dashboards(database: Database, settings: AppSettings | Settings, report_code: str,

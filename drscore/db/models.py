@@ -108,6 +108,9 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(200))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     sso_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
+    # The user's Superset account when its name is not the DRS user name (Superset has its own
+    # sign-in): the BI page finds "Mine" by it. Empty: the account with the DRS user name.
+    superset_username: Mapped[str | None] = mapped_column(String(100), unique=True, index=True)
     is_admin: Mapped[bool] = _bool(False)
     is_active: Mapped[bool] = _bool(True)
     # Set while the password is one everybody knows (the default administrator's): the session
@@ -126,6 +129,11 @@ class User(Base):
 
     def __str__(self) -> str:
         return self.username
+
+    @property
+    def superset_account(self) -> str:
+        """The name of the user's Superset account: the one linked on the user, else the DRS name."""
+        return self.superset_username or self.username
 
 
 class Role(Base):

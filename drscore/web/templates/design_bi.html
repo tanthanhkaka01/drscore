@@ -70,9 +70,12 @@
       <i class="ti ti-list me-1"></i>{{ t('design.superset_all') }}</a>
   </div>
   <span class="small text-secondary">{{ t('design.superset_scope_admin') if auth.is_admin else t('design.superset_scope') }}</span>
+  {% if catalog and catalog.me is not none %}
+  <span class="small text-secondary ms-auto"><i class="ti ti-user-check me-1"></i>{{ t('design.superset_account', account=catalog.account) }}</span>
+  {% endif %}
 </div>
 {% if catalog and not catalog.error and catalog.me is none %}
-<div class="alert alert-info mb-3" role="alert">{{ t('design.superset_no_account', username=auth.username) }}</div>
+<div class="alert alert-info mb-3" role="alert">{{ t('design.superset_no_account', username=catalog.account) }}</div>
 {% endif %}
 
 <div class="row row-cards">

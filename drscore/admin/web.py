@@ -600,11 +600,15 @@ class UserAdmin(AuditedView, model=User):
                    User.last_login_at]
     column_searchable_list = [User.username, User.display_name, User.email]
     column_sortable_list = [User.username, User.last_login_at]
-    form_columns = [User.username, User.display_name, User.email, User.sso_subject, User.is_admin, User.is_active,
-                    User.must_change_password, User.roles]
+    form_columns = [User.username, User.display_name, User.email, User.sso_subject, User.superset_username,
+                    User.is_admin, User.is_active, User.must_change_password, User.roles]
+    form_args = {"superset_username": {"description": _(
+        "The user's account in Superset, when they sign in there with another name. "
+        "Empty: the Superset account named like the DRS user.")}}
     column_details_exclude_list = [User.password_hash, User.user_id]
     column_labels = {"username": L("User name"), "display_name": L("Name"), "email": L("E-mail"),
-                     "sso_subject": L("SSO subject"), "is_admin": L("Administrator"), "is_active": L("Active"),
+                     "sso_subject": L("SSO subject"), "superset_username": L("Superset account"),
+                     "is_admin": L("Administrator"), "is_active": L("Active"),
                      "must_change_password": L("Must change password"),
                      "roles": L("Roles"), "last_login_at": L("Last sign-in"), "new_password": L("New password"),
                      "failed_login_count": L("Failed sign-ins"), "locked_until": L("Locked until")}
@@ -630,6 +634,19 @@ class UserAdmin(AuditedView, model=User):
             request.state.end_sessions = True
         if not is_created and obj.is_active and data.get("is_active") is False:
             request.state.end_sessions = True
+
+    async def on_model_change(self, data, model, is_created, request):
+        await super().on_model_change(data, model, is_created, request)
+        from drscore.admin import service as admin_service
+
+        def superset_account():
+            with self.database.session() as s:
+                return admin_service.check_superset_account(s, data["username"], data.get("superset_username"),
+                                                            None if is_created else model.user_id)
+        try:
+            data["superset_username"] = await run_in_threadpool(superset_account)
+        except admin_service.AdminError as exc:
+            raise AdminInputError(str(exc)) from exc
 
     async def after_model_change(self, data, model, is_created, request):
         await super().after_model_change(data, model, is_created, request)

@@ -123,7 +123,9 @@ asks Superset's API for a token with admin / admin (`/api/v1/security/login`) is
 (measured on 6.1.0), so change the password right after the first start. It does not
 concern the viewers of embedded dashboards (guest tokens issued by DRS) nor users without a local
 password. Superset accounts are separate from DRS accounts: only the people who design dashboards
-need one (Settings > List Users); DRS viewers never do.
+need one (Settings > List Users); DRS viewers never do. Name it like the DRS user, or enter its name
+once in the **Superset account** field of the DRS user (Administration > Users, or
+`drscore user set-superset <user> <superset name>`): the BI page finds the designer's *Mine* by it.
 
 1. **Database connection** (Settings > Database Connections > + Database > PostgreSQL):
    `postgresql+psycopg2://superset_reader:<SUPERSET_READER_PASSWORD>@postgres:5432/drs`.
@@ -218,7 +220,8 @@ DRS signs in to Superset with an account having the **Admin** role (`admin_usern
   when it is attached and again (cached 60 seconds) whenever a guest token is issued.
 - List, for the BI page, the datasets of the DRS connection (`GET /api/v1/dataset/`), every chart
   (`GET /api/v1/chart/`), the owners of a dashboard (`GET /api/v1/dashboard/<id>`) and the
-  designer's Superset account by name (`GET /api/v1/security/users/`, the security API that also
+  designer's Superset account by name (the user's **Superset account**, else their DRS user name;
+  `GET /api/v1/security/users/`, the security API that also
   serves the roles: `FAB_ADD_SECURITY_API = True`).
 
 By contrast, the guest-token service account (`drs_service`) remains minimally privileged with only
@@ -317,8 +320,11 @@ the charts built on them:
   the same way (`member_forbidden`). An **administrator sees everything**, charts outside DRS too.
 - **Mine / All** (top of the page, *Mine* by default): *Mine* keeps the dashboards and charts the
   designer owns in Superset, and the datasets of the reports they created in DRS (`created_by`).
-  The Superset account must have the **same username** as the DRS user; without one, the page says
-  so and *Mine* keeps only the datasets. *All* shows everything they may see, theirs marked.
+  The designer's Superset account is the one entered in the **Superset account** field of their DRS
+  user, or, when it is empty, the one with the same username; the page names it. Without one, the
+  page says so and *Mine* keeps only the datasets. *All* shows everything they may see, theirs
+  marked. One Superset account belongs to one DRS user: a name already linked to another user, or
+  another user's DRS name, is refused.
 - When Superset's lists cannot be read, the page says so (the reason to administrators) and the
   dashboards of the report stay listed, unfiltered by owner.
 
@@ -388,7 +394,7 @@ Superset can also save a dashboard as PDF or image (Download menu).
 | The BI page says `dataset not made yet - run the report once` | The report has not been executed yet so its view in `drs_bi` does not exist. Click **Create BI dataset** on the BI page, or open the report and click **Run**. |
 | A report made in the administration pages has no **Open in Superset** and no dashboard to attach; the BI page says it has no BI dataset table | Made before 1.4, it got no table name (only published drafts did). Click **Create BI dataset** on its BI page, or **Create BI table** in the administration pages. |
 | **Create BI dataset** says a required parameter has no default value | The table is named, but a run without values is impossible: open the report, run it once with values (that fills the dataset), then come back. |
-| The BI page lists no dashboard or chart although there are some in Superset | *Mine* is chosen (the default): click **All**. Or they read a report the designer may not design (another group, or a datasource not granted to them). Or the Superset account has another username than the DRS user. |
+| The BI page lists no dashboard or chart although there are some in Superset | *Mine* is chosen (the default): click **All**. Or they read a report the designer may not design (another group, or a datasource not granted to them). Or the designer signs in to Superset with another name than their DRS user name and the **Superset account** field of their DRS user is empty: enter that name there. |
 | Attaching a dashboard is refused: `Dashboard uses N other dataset(s) that no DRS report feeds` | Every chart must be built on the dataset of a DRS report (`drs_bi.<table>`), and the dashboard must use the report's own dataset. See "A dashboard on the datasets of several reports". |
 | The Dashboard tab shows `DESIGN_INVALID` after charts were added in Superset | The dashboard now uses a dataset DRS did not record when it was attached: click **Use for this report** again on the BI page. |
 | The Dashboard tab shows `FORBIDDEN` with a report code | The dashboard also reads that report: grant the user access to it, or take its charts off the dashboard. |
