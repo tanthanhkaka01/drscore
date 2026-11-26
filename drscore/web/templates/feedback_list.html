@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}{{ t('feedback.title') }}{% endblock %}
+{% block header %}<h2 class="page-title">{{ t('feedback.title') }}</h2>
+<div class="text-secondary mt-1">{{ t('feedback.lead_admin') if is_admin else t('feedback.lead') }}</div>{% endblock %}
+{% block header_actions %}{% if is_admin and not mine %}<a class="btn btn-primary" href="/feedback?mine=1"><i class="ti ti-plus me-1"></i>{{ t('feedback.new') }}</a>{% endif %}{% endblock %}
+{% block content %}
+{% set colors = {'new': 'red', 'seen': 'azure', 'doing': 'yellow', 'done': 'green', 'wontfix': 'secondary'} %}
+{% if is_admin and not mine %}
+<form method="get" action="/feedback" class="sk-toolbar">
+  <select class="form-select" name="status" aria-label="{{ t('feedback.status') }}">
+    <option value="">{{ t('feedback.status_any') }}</option>
+    <option value="open" {% if status == 'open' %}selected{% endif %}>{{ t('feedback.status_open') }}</option>
+    {% for st in statuses %}<option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ t('feedback.status_' ~ st) }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">{{ t('feedback.filter') }}</button>
+  <span class="sk-count sk-end">{{ t('system.count', n=items | length) }}</span>
+</form>
+<div class="card">
+  <div class="sk-table-wrap sk-table-tall">
+    <table class="table table-vcenter card-table sk-table-stack">
+      <thead><tr><th>#</th><th>{{ t('system.col_time') }}</th><th>{{ t('feedback.sender') }}</th><th>{{ t('feedback.page') }}</th>
+        <th>{{ t('feedback.kind') }}</th><th>{{ t('feedback.message') }}</th><th>{{ t('feedback.attached') }}</th><th>{{ t('feedback.status') }}</th></tr></thead>
+      <tbody>
+        {% for f in items %}
+        <tr>
+          <td class="fw-semibold"><a href="/feedback/{{ f.id }}">{{ f.id }}</a></td>
+          <td class="sk-nowrap">{{ f.created_at.astimezone(tz).strftime('%H:%M %d/%m/%Y') }}</td>
+          <td>{{ f.username }}</td>
+          <td class="small">{{ f.page_path or '' }}</td>
+          <td><span class="badge {{ 'bg-red text-red-fg' if f.kind == 'bug' else 'bg-blue text-blue-fg' if f.kind == 'idea' else 'bg-purple text-purple-fg' }}">{{ t('feedback.kind_' ~ f.kind) }}</span>
+            {% if f.urgency != 'normal' %}<div class="small {{ 'text-red' if f.urgency == 'high' else 'text-secondary' }}">{{ t('feedback.urgency_' ~ f.urgency) }}</div>{% endif %}</td>
+          <td class="small" style="max-width: 26rem"><a class="text-reset" href="/feedback/{{ f.id }}">{{ f.message[:160] }}{% if f.message | length > 160 %}…{% endif %}</a></td>
+          <td class="sk-nowrap small">{% if f.files %}<i class="ti ti-paperclip"></i> {{ f.files }} {% endif %}{% if f.comments %}<i class="ti ti-message-circle"></i> {{ f.comments }}{% endif %}</td>
+          <td><span class="badge bg-{{ colors[f.status] }} text-{{ colors[f.status] }}-fg">{{ t('feedback.status_' ~ f.status) }}</span></td>
+        </tr>
+        {% else %}<tr><td colspan="8" class="text-center text-secondary py-4">{{ t('feedback.none') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="row row-cards">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-message-report me-2"></i>{{ t('feedback.new') }}</h3></div>
+      <div class="card-body">
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" action="/feedback" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label" for="kind">{{ t('feedback.kind') }}</label>
+              <select class="form-select" id="kind" name="kind">
+                {% for k in kinds %}<option value="{{ k }}" {% if form.kind == k %}selected{% endif %}>{{ t('feedback.kind_' ~ k) }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="urgency">{{ t('feedback.urgency') }}</label>
+              <select class="form-select" id="urgency" name="urgency">
+                {% for u in urgencies %}<option value="{{ u }}" {% if form.urgency == u %}selected{% endif %}>{{ t('feedback.urgency_' ~ u) }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="page_path">{{ t('feedback.page') }}</label>
+            <input class="form-control" id="page_path" name="page_path" value="{{ form.page_path }}" maxlength="400"
+                   placeholder="/reports/...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label required" for="message">{{ t('feedback.message') }}</label>
+            <textarea class="form-control" id="message" name="message" rows="7" required maxlength="8000"
+                      placeholder="{{ t('feedback.message_hint') }}">{{ form.message }}</textarea>
+          </div>
+          {% if max_files %}
+          <div class="mb-3">
+            <label class="form-label" for="files"><i class="ti ti-paperclip me-1"></i>{{ t('feedback.files') }}</label>
+            <input class="form-control" type="file" id="files" name="files" multiple
+                   accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.xlsx,.docx,.csv,.txt">
+            <small class="form-hint">{{ t('feedback.files_hint', n=max_files, mb=max_file_mb) }}</small>
+          </div>
+          {% endif %}
+          <button type="submit" class="btn btn-primary"><i class="ti ti-send me-1"></i>{{ t('feedback.send') }}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">{{ t('feedback.all') if is_admin and not mine else t('feedback.mine') }}</h3>
+        <div class="card-actions">
+          <form method="get" action="/feedback" class="d-flex gap-2">
+            <select class="form-select form-select-sm" name="status" aria-label="{{ t('feedback.status') }}">
+              <option value="">{{ t('feedback.status_any') }}</option>
+              <option value="open" {% if status == 'open' %}selected{% endif %}>{{ t('feedback.status_open') }}</option>
+              {% for st in statuses %}<option value="{{ st }}" {% if status == st %}selected{% endif %}>{{ t('feedback.status_' ~ st) }}</option>{% endfor %}
+            </select>
+            {% if is_admin %}
+            <label class="form-check form-check-inline m-0 align-self-center">
+              <input class="form-check-input" type="checkbox" name="mine" value="1" {% if mine %}checked{% endif %}>
+              <span class="form-check-label">{{ t('feedback.only_mine') }}</span>
+            </label>
+            {% endif %}
+            <button class="btn btn-sm" type="submit">{{ t('feedback.filter') }}</button>
+          </form>
+        </div>
+      </div>
+      {% if items %}
+      <div class="list-group list-group-flush">
+        {% for f in items %}
+        <a class="list-group-item list-group-item-action" href="/feedback/{{ f.id }}">
+          <div class="d-flex align-items-center gap-2">
+            <strong>#{{ f.id }}</strong>
+            <span class="badge bg-{{ colors[f.status] }} text-{{ colors[f.status] }}-fg">{{ t('feedback.status_' ~ f.status) }}</span>
+            <span class="text-secondary small">{{ t('feedback.kind_' ~ f.kind) }}{% if f.urgency == 'high' %} · <span class="text-red">{{ t('feedback.urgency_high') }}</span>{% endif %}</span>
+            <span class="ms-auto text-secondary small">{% if is_admin %}{{ f.username }} · {% endif %}{{ f.created_at.astimezone(tz).strftime('%d/%m/%Y %H:%M') }}</span>
+          </div>
+          <div class="text-truncate mt-1">{{ f.message }}</div>
+          <div class="text-secondary small">{% if f.page_path %}{{ f.page_path }}{% endif %}{% if f.comments %} · <i class="ti ti-message-circle"></i> {{ f.comments }}{% endif %}{% if f.files %} · <i class="ti ti-paperclip"></i> {{ f.files }}{% endif %}</div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card-body"><div class="empty"><p class="empty-title">{{ t('feedback.none') }}</p></div></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

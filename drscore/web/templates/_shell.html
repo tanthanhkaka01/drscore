@@ -1,0 +1,120 @@
+{# The frame of every signed-in page, the portal's and the admin pages' (drscore/admin/templates/sqladmin/layout.html):
+   the kit's app frame on Tabler (kit 1.7.0, static/kit/, README "Bootstrap and Tabler apps"). `s` is
+   templating.shell_context(): the user, the menu (navigation.build), the versions, the words. #}
+
+{% macro head(s) %}
+  <link rel="preload" href="{{ s.static('kit/fonts/manrope/manrope-latin-400-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ s.static('kit/kit.css') }}">
+  <link rel="stylesheet" href="{{ s.static('kit/bs/tabler.min.css') }}">
+  <link rel="stylesheet" href="{{ s.static('vendor/tabler-icons/tabler-icons.min.css') }}">
+  <link rel="stylesheet" href="{{ s.static('kit/bs/kit-bs.css') }}">
+  {# No defer: the theme and the folded menu are set before the page paints. #}
+  <script src="{{ s.static('kit/kit.js') }}"></script>
+  <script src="{{ s.static('kit/bs/kit-bs.js') }}"></script>
+{% endmacro %}
+
+{% macro sidebar(s) %}
+<aside class="navbar navbar-vertical navbar-expand-lg d-print-none" id="sidebar" data-sk-sidebar data-sk-icon-tiles>
+  <div class="container-fluid">
+    <a class="navbar-brand d-none d-lg-flex" href="/">
+      <span class="sk-logo"><i class="ti ti-report-analytics"></i></span><span class="nav-link-title sk-brand-name">{{ s.app_name }}</span>
+    </a>
+    <div class="offcanvas-lg offcanvas-start navbar-collapse" tabindex="-1" id="sidebar-menu" aria-labelledby="sidebar-title">
+      <div class="offcanvas-header d-lg-none">
+        <h2 class="offcanvas-title fs-3 d-flex align-items-center gap-2" id="sidebar-title"><span class="sk-logo"><i class="ti ti-report-analytics"></i></span>{{ s.app_name }}</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sidebar-menu" aria-label="{{ s.t('nav.close') }}"></button>
+      </div>
+      <div class="offcanvas-body">
+        {% for sec in s.nav %}
+        <ul class="navbar-nav">
+          {% if sec.label %}<li class="sk-nav-heading">{{ sec.label }}</li>{% endif %}
+          {% for it in sec.items %}
+          {% if it.href %}
+          <li class="nav-item{% if it.active %} active{% endif %}" data-sk-color="{{ it.color }}">
+            <a class="nav-link{% if it.active %} active{% endif %}" href="{{ it.href }}"{% if it.active %} aria-current="page"{% endif %}>
+              <span class="nav-link-icon"><i class="ti ti-{{ it.icon }}"></i></span>
+              <span class="nav-link-title">{{ it.label }}</span>
+              {% if it.badge %}<span class="badge bg-red text-red-fg ms-auto">{{ it.badge }}</span>{% endif %}
+            </a>
+          </li>
+          {% else %}
+          <li class="nav-item dropdown{% if it.active %} active{% endif %}" data-sk-color="{{ it.color }}">
+            <a class="nav-link dropdown-toggle{% if it.active %} show{% endif %}" href="#menu-{{ it.key }}"
+               data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="{{ 'true' if it.active else 'false' }}">
+              <span class="nav-link-icon"><i class="ti ti-{{ it.icon }}"></i></span>
+              <span class="nav-link-title">{{ it.label }}</span>
+              {% if it.badge %}<span class="badge bg-red text-red-fg ms-auto me-2">{{ it.badge }}</span>{% endif %}
+            </a>
+            <div class="dropdown-menu{% if it.active %} show{% endif %}">
+              {% for l in it.links %}
+              <a class="dropdown-item sk-sublink{% if l.active %} active{% endif %}" href="{{ l.href }}"{% if l.active %} aria-current="page"{% endif %}>{{ l.label }}
+                {% if l.badge %}<span class="badge bg-red text-red-fg ms-auto">{{ l.badge }}</span>{% endif %}</a>
+              {% endfor %}
+            </div>
+          </li>
+          {% endif %}
+          {% endfor %}
+        </ul>
+        {% endfor %}
+
+        {% if s.auth %}
+        <ul class="navbar-nav sk-sidebar-foot">
+          <li class="nav-item">
+            <a class="nav-link sk-version{% if s.path == '/changes' %} active{% endif %}" href="/changes" title="{{ s.t('changes.title') }}">
+              <span class="nav-link-icon"><i class="ti ti-info-circle"></i></span>
+              <span class="nav-link-title">v{{ s.app_version }}</span>
+            </a>
+          </li>
+          <li class="sk-kit-version" data-k-kit-version></li>
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</aside>
+{% endmacro %}
+
+{# The top bar: ☰ (phone) or fold (wide screen), the page's title (the caller's block), theme, language, account. #}
+{% macro topbar(s) %}
+<header class="navbar navbar-expand sk-topbar d-print-none">
+  <div class="container-fluid flex-nowrap gap-2">
+    <button class="btn btn-icon btn-ghost-secondary d-lg-none" type="button" data-bs-toggle="offcanvas"
+            data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" title="{{ s.t('nav.toggle') }}" aria-label="{{ s.t('nav.toggle') }}"><i class="ti ti-menu-2 fs-2"></i></button>
+    <button class="btn btn-icon btn-ghost-secondary d-none d-lg-inline-flex" type="button" data-sk-fold
+            aria-pressed="false" title="{{ s.t('nav.fold') }}" aria-label="{{ s.t('nav.fold') }}"><i class="ti ti-layout-sidebar"></i></button>
+    <div class="sk-title me-auto">{{ caller() }}</div>
+    <button class="btn btn-icon btn-ghost-secondary sk-theme sk-phone-hide" type="button" data-theme-toggle
+            title="{{ s.t('nav.theme') }}" aria-label="{{ s.t('nav.theme') }}"><i class="ti ti-moon sk-theme-moon"></i><i class="ti ti-sun sk-theme-sun"></i></button>
+    <div class="btn-group btn-group-sm sk-phone-hide" role="group" aria-label="{{ s.t('nav.language') }}">
+      {% for loc in s.locales %}
+      <a class="btn {% if loc == s.locale %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="/locale/{{ loc }}?next={{ s.path | urlencode }}">{{ 'VN' if loc == 'vi' else loc | upper }}</a>
+      {% endfor %}
+    </div>
+    {% if s.auth %}
+    <div class="nav-item dropdown">
+      <a href="#" class="nav-link d-flex lh-1 p-0 px-1" data-bs-toggle="dropdown" aria-label="{{ s.t('nav.account') }}">
+        {% set words = (s.auth.display_name or s.auth.username).split() %}<span class="avatar avatar-sm">{{ ((words[0][:1] ~ words[1][:1]) if words | length > 1 else words[0][:2]) | upper }}</span>
+        <div class="d-none d-xl-block ps-2">
+          <div class="fw-semibold">{{ s.auth.display_name }}</div>
+          <div class="mt-1 small text-secondary">{{ s.auth.username }}{% if s.auth.is_admin %} · {{ s.t('nav.admin_badge') }}{% endif %}</div>
+        </div>
+      </a>
+      <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+        <a href="/account" class="dropdown-item"><i class="ti ti-user-cog me-2"></i>{{ s.t('nav.account') }}</a>
+        <a href="/changes" class="dropdown-item"><i class="ti ti-info-circle me-2"></i>{{ s.t('changes.title') }}</a>
+        <div class="sk-phone-only">
+          <div class="dropdown-divider"></div>
+          {% for loc in s.locales %}{% if loc != s.locale %}<a class="dropdown-item" href="/locale/{{ loc }}?next={{ s.path | urlencode }}"><i class="ti ti-language me-2"></i>{{ s.t('lang.' ~ loc) }}</a>{% endif %}{% endfor %}
+          <button class="dropdown-item" type="button" data-theme-toggle><i class="ti ti-moon me-2"></i>{{ s.t('nav.theme') }}</button>
+        </div>
+        <div class="dropdown-divider"></div>
+        <form method="post" action="/logout" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ s.auth.csrf_token }}">
+          <button type="submit" class="dropdown-item"><i class="ti ti-logout me-2"></i>{{ s.t('nav.logout') }}</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</header>
+{% endmacro %}

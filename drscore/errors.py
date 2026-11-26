@@ -40,6 +40,15 @@ CATALOGUE: dict[str, tuple[int, str]] = {
     "BI_ENGINE_UNAVAILABLE": (502, "The BI system cannot be reached right now."),
     "BUSY": (503, "The report is being prepared by another request. Try again in a moment."),
     "SOURCE_TIMEOUT": (504, "The data source took too long to answer."),
+    "ADMIN_ONLY": (403, "This page is for administrators."),
+    "FEEDBACK_NOT_FOUND": (404, "The feedback was not found."),
+    "FEEDBACK_INVALID": (422, "The feedback is not valid."),
+    "FEEDBACK_FORBIDDEN": (403, "Only an administrator may do this with a feedback."),
+    "AI_OFF": (404, "The AI agent is not available."),
+    "AI_NOT_ALLOWED": (403, "Your account may not use the AI agent."),
+    "AI_LIMIT": (429, "The AI agent's limit is reached for now. Try again later."),
+    "AI_UNAVAILABLE": (502, "The AI agent cannot answer right now. Try again in a moment."),
+    "AI_CONVERSATION_NOT_FOUND": (404, "The conversation was not found."),
 }
 
 

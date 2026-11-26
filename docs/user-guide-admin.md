@@ -65,6 +65,7 @@ Navigate to **Users and access**:
 
 - **Users**: Create user accounts and set an initial password in **New password**.
   Tick **Must change password** to require the user to choose a new password at their first sign-in. Until then, every page sends the user to the Account page (`/account`); other requests are refused with 403.
+  **Session days** (1-366, empty by default): one sign-in of this user then lasts that many days, used or not, the browser closed or the computer restarted in between - for the viewer of a dashboard. Empty: the `[session]` limits of `app.toml` (sign-out after `idle_minutes` without a request, at most `absolute_hours`). It applies from the user's next sign-in.
 - **Roles and members**: Create functional roles (e.g. `SALES_STAFF`) and assign user accounts as members.
 - **User attributes**: Define key-value attributes for row filters (e.g. `company_code = HQ`). Enter `*` to allow access to every value. User attributes are matched automatically against report row-level filter rules.
 
@@ -126,6 +127,7 @@ Run these administration commands using Python in your server console:
 | `python -m drscore report validate` | Check all report queries, parameters, and design bindings across the system. |
 | `python -m drscore db check` | Check database connection and verify migration status. |
 | `python -m drscore user set-password USER` | Set or reset the password for user USER from the console. |
+| `python -m drscore user set-session USER --days 30` | Keep USER signed in for 30 days per sign-in (`--default`: back to `[session]` of app.toml). |
 
 ## Troubleshooting
 

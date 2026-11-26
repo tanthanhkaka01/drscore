@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ t('system.log') }}{% endblock %}
+{% block header %}<div class="page-pretitle">{{ t('nav.system_group') }}</div><h2 class="page-title">{{ t('system.log') }}</h2>{% endblock %}
+{% block content %}
+<ul class="nav nav-tabs mb-3">
+  {% for k in ('activity', 'access', 'audit') %}
+  <li class="nav-item"><a class="nav-link {% if f.kind == k %}active{% endif %}"
+      href="?kind={{ k }}&from={{ f['from'] }}&to={{ f['to'] }}&user={{ f.user | urlencode }}&q={{ f.q | urlencode }}{% if f.refused %}&refused=1{% endif %}">{{ t('system.kind_' ~ k) }}</a></li>
+  {% endfor %}
+</ul>
+<form method="get" action="/system/log" class="sk-toolbar">
+  <input type="hidden" name="kind" value="{{ f.kind }}">
+  <input class="form-control" type="date" name="from" value="{{ f['from'] }}" aria-label="{{ t('system.from') }}">
+  <input class="form-control" type="date" name="to" value="{{ f['to'] }}" aria-label="{{ t('system.to') }}">
+  <select class="form-select" name="user" aria-label="{{ t('system.col_user') }}">
+    <option value="">{{ t('system.any_user') }}</option>
+    {% for u in users %}<option value="{{ u }}" {% if f.user == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+  </select>
+  {% if f.kind == 'activity' %}
+  <select class="form-select" name="action" aria-label="{{ t('system.col_what') }}">
+    <option value="">{{ t('system.any_action') }}</option>
+    {% for code, name in actions %}<option value="{{ code }}" {% if f.action == code %}selected{% endif %}>{{ name }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <input class="form-control sk-grow" type="search" name="q" value="{{ f.q }}" placeholder="{{ t('system.search') }}">
+  {% if f.kind != 'audit' %}
+  <label class="form-check m-0"><input class="form-check-input" type="checkbox" name="refused" value="1" {% if f.refused %}checked{% endif %}>
+    <span class="form-check-label">{{ t('system.only_refused') }}</span></label>
+  {% endif %}
+  <button class="btn btn-primary" type="submit"><i class="ti ti-filter me-1"></i>{{ t('system.show') }}</button>
+  <a class="btn btn-outline-success sk-end" href="/system/log.xlsx?{{ query }}"><i class="ti ti-file-spreadsheet me-1"></i>{{ t('system.export') }}</a>
+</form>
+<div class="sk-count mb-2">{{ t('system.count', n=(rows | length) ~ ('+' if rows | length >= limit else '')) }}</div>
+<div class="card">
+  <div class="sk-table-wrap sk-table-tall">
+    <table class="table table-vcenter table-sm card-table sk-table-stack">
+      <thead><tr>
+        <th>{{ t('system.col_time') }}</th><th>{{ t('system.col_user') }}</th><th>{{ t('system.col_what') }}</th>
+        <th>{{ t('system.col_detail') }}</th><th>{{ t('system.col_result') }}</th><th>{{ t('system.col_ip') }}</th>
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="sk-nowrap">{{ r.at.astimezone(tz).strftime('%H:%M %d/%m/%Y') }}</td>
+          <td class="fw-semibold">{{ r.user }}</td>
+          <td>{{ r.what }}{% if r.object %}<div class="text-secondary small">{{ r.object }}</div>{% endif %}</td>
+          <td class="small text-break" style="max-width: 36rem">{{ r.detail }}</td>
+          <td class="sk-nowrap">
+            {% if r.ok == 'OK' %}<span class="text-green">{{ t('system.ok') }}</span>
+            {% elif r.ok == 'DENIED' %}<span class="text-orange">{{ t('system.denied') }}</span>
+            {% else %}<span class="text-red">{{ t('system.error') }}</span>{% endif %}
+            {% if r.status %}<span class="text-secondary small">{{ r.status }}</span>{% endif %}
+            {% if r.ms is not none %}<div class="text-secondary small">{{ r.ms }} ms</div>{% endif %}
+          </td>
+          <td class="small">{{ r.ip }}{% if r.agent %}<div class="text-secondary">{{ r.agent }}</div>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-secondary py-4">{{ t('system.no_rows') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

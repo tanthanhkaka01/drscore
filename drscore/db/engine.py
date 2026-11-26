@@ -51,8 +51,19 @@ def create_bi_engine(db: DatabaseSettings) -> Engine:
     read-only mount), which decides two things. No WAL: a reader of a WAL database must be able to
     write beside it. And real transactions, DDL included - pysqlite would commit before every
     CREATE / DROP, and the reader could find the table gone in the middle of a replacement."""
-    db.sqlite.bi_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(URL.create("sqlite+pysqlite", database=str(db.sqlite.bi_path)),
+    return _shared_file_engine(db.sqlite.bi_path)
+
+
+def create_mirror_engine(db: DatabaseSettings) -> Engine:
+    """SQLite only: the file of the mirrored source tables, read by reports through a datasource of
+    type sqlite (opened read-only): the same two rules as the BI datasets file."""
+    return _shared_file_engine(db.sqlite.mirror_path)
+
+
+def _shared_file_engine(path) -> Engine:
+    """A SQLite file that this process writes and other connections read."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(URL.create("sqlite+pysqlite", database=str(path)),
                            connect_args={"timeout": 30, "check_same_thread": False})
 
     @event.listens_for(engine, "connect")
@@ -100,6 +111,7 @@ class Database:
         self.engine = create_drs_engine(db)
         self.sessionmaker = sessionmaker(self.engine, expire_on_commit=False)
         self._bi_engine: Engine | None = None
+        self._mirror_engine: Engine | None = None
 
     @property
     def dialect(self) -> str:
@@ -114,6 +126,20 @@ class Database:
         if self._bi_engine is None:
             self._bi_engine = create_bi_engine(self.settings)
         return self._bi_engine
+
+    @property
+    def mirror_engine(self) -> Engine:
+        """Where the mirrored source tables are written: schema ``mirror_schema`` of the DRS database
+        on PostgreSQL, a file of their own on SQLite (``[sqlite] mirror_path``)."""
+        if self.settings.active != "sqlite":
+            return self.engine
+        if self._mirror_engine is None:
+            self._mirror_engine = create_mirror_engine(self.settings)
+        return self._mirror_engine
+
+    @property
+    def mirror_schema(self) -> str | None:
+        return self.settings.postgresql.mirror_schema if self.settings.active != "sqlite" else None
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -131,6 +157,9 @@ class Database:
         if self._bi_engine is not None:
             self._bi_engine.dispose()
             self._bi_engine = None
+        if self._mirror_engine is not None:
+            self._mirror_engine.dispose()
+            self._mirror_engine = None
 
 
 _database: Database | None = None

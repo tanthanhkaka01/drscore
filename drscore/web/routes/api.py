@@ -98,9 +98,9 @@ def report_bi_members(code: str, body: BiMembersRequest, request: Request, user:
 
 @router.get("/api/reports/{code}/export")
 def report_export(code: str, request: Request, format: str = Query(...), snapshot_id: int = Query(...),
-                  user: User = Depends(current_user)):
+                  cols: str | None = Query(None, max_length=4000), user: User = Depends(current_user)):
     file = views.export(get_database(), get_settings().app, user.username, code, format.lower(), snapshot_id,
-                        client_ip(request))
+                        client_ip(request), cols=cols)
     headers = {"Content-Disposition": f'attachment; filename="{file.filename}"', "Cache-Control": "no-store"}
     if file.path is not None:
         return FileResponse(file.path, media_type=file.media_type, headers=headers,

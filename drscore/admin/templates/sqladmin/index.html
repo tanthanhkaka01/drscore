@@ -1,0 +1,29 @@
+{# DRS override of sqladmin 0.32.0's index.html (empty there): the admin home shows what the menu's Administration
+   and Monitoring sections hold, each item a card with its tile and its links.
+   sqladmin: Copyright (c) 2022, Amin Alaee, BSD-3-Clause (LICENSE.sqladmin beside this file). #}
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+{% set s = drs_shell(request) %}
+{% for sec in s.nav if sec.key in ('admin', 'monitor') %}
+<div class="col-12"><div class="sk-nav-heading ms-0 mb-0">{{ sec.label }}</div></div>
+{% for it in sec.items if it.key != 'admin-home' %}
+<div class="col-sm-6 col-xl-4">
+  <div class="card drs-admin-card">
+    <div class="card-body">
+      <div class="d-flex align-items-center gap-3 mb-2">
+        <span class="sk-tile sk-tile-lg" data-sk-color="{{ it.color }}"><i class="ti ti-{{ it.icon }}"></i></span>
+        {% if it.href %}<a class="h3 m-0 text-reset" href="{{ it.href }}">{{ it.label }}</a>{% else %}<h3 class="m-0">{{ it.label }}</h3>{% endif %}
+        {% if it.badge %}<span class="badge bg-red text-red-fg ms-auto">{{ it.badge }}</span>{% endif %}
+      </div>
+      {% set d = 'nav.desc.' ~ it.key %}{% if s.t(d) != d %}<p class="text-secondary mb-3">{{ s.t(d) }}</p>{% endif %}
+      {% if it.links %}
+      <div class="d-flex flex-wrap gap-1">
+        {% for l in it.links %}<a class="btn btn-sm" href="{{ l.href }}">{{ l.label }}</a>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endfor %}
+{% endblock %}

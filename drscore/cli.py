@@ -154,11 +154,13 @@ def cmd_user_list(args: argparse.Namespace) -> int:
 
     with _admin_session() as s:
         users = admin.list_users(s)
-        print(f"{'USERNAME':<24} {'DISPLAY NAME':<30} {'ADMIN':<6} {'ACTIVE':<7} {'PASSWORD':<9} {'SSO':<24} SUPERSET")
+        print(f"{'USERNAME':<24} {'DISPLAY NAME':<30} {'ADMIN':<6} {'ACTIVE':<7} {'PASSWORD':<9} {'SSO':<24} "
+              f"{'SUPERSET':<20} SESSION")
         for u in users:
             print(f"{u.username:<24} {u.display_name[:30]:<30} {'yes' if u.is_admin else 'no':<6} "
                   f"{'yes' if u.is_active else 'no':<7} {'set' if u.password_hash else '-':<9} "
-                  f"{u.sso_subject or '-':<24} {u.superset_username or '-'}")
+                  f"{u.sso_subject or '-':<24} {u.superset_username or '-':<20} "
+                  f"{f'{u.session_days}d' if u.session_days else '-'}")
         print(f"{len(users)} user(s).")
     return 0
 
@@ -206,6 +208,20 @@ def cmd_user_set_superset(args: argparse.Namespace) -> int:
                            None if args.clear else args.superset_username)
         print(f"User {user.username}: Superset account {user.superset_account}"
               f"{'' if user.superset_username else ' (the DRS user name)'}.")
+    return 0
+
+
+def cmd_user_set_session(args: argparse.Namespace) -> int:
+    from drscore.admin import service as admin
+    from drscore.audit import cli_actor
+
+    if (args.days is None) != args.default:
+        raise CommandError("Give --days N, or --default.")
+    with _admin_session() as s:
+        user = _admin_call(admin.set_user_session_days, s, cli_actor(), args.username, args.days)
+        print(f"User {user.username}: a sign-in lasts "
+              f"{f'{user.session_days} day(s)' if user.session_days else 'as [session] of app.toml'}"
+              f", from the next sign-in.")
     return 0
 
 
@@ -364,6 +380,8 @@ def cmd_bi_sync(args: argparse.Namespace) -> int:
             report_id = r.report_id
         outcome = selfservice.sync_report(database, settings, report_id)
         print(outcome)
+        for out in selfservice.sync_embedding(database, settings, [code]):
+            print(out)
     elif getattr(args, "group", None):
         group_code = args.group
         with database.session() as s:
@@ -380,6 +398,8 @@ def cmd_bi_sync(args: argparse.Namespace) -> int:
             outcomes = selfservice.sync_group(database, settings, g_code)
             for out in outcomes:
                 print(out)
+        for out in selfservice.sync_embedding(database, settings):
+            print(out)
     return 0
 
 
@@ -403,8 +423,12 @@ def build_parser() -> argparse.ArgumentParser:
     db.add_parser("upgrade", help="create / migrate the DRS database").set_defaults(handler=cmd_db_upgrade)
     db.add_parser("check", help="engine, migration version, every table reachable").set_defaults(handler=cmd_db_check)
 
-    secret = sub.add_parser("secret", help="encryption key").add_subparsers(dest="action", required=True)
+    secret = sub.add_parser("secret", help="encryption key; integration secrets (AI key, bot tokens)").add_subparsers(
+        dest="action", required=True)
     secret.add_parser("new-key", help="print a new encryption key").set_defaults(handler=cmd_secret_new_key)
+    from drscore.cli_integrations import add_parsers as add_integration_parsers
+
+    add_integration_parsers(sub, secret)
 
     _add_user_parsers(sub)
     _add_role_parsers(sub)
@@ -414,6 +438,15 @@ def build_parser() -> argparse.ArgumentParser:
     from drscore.cli_reports import add_parsers
 
     add_parsers(sub)
+    from drscore.cli_mirror import add_parsers as add_mirror_parsers
+
+    add_mirror_parsers(sub)
+    from drscore.cli_publiclink import add_parsers as add_publiclink_parsers
+
+    add_publiclink_parsers(sub)
+    from drscore.cli_choicelist import add_parsers as add_choicelist_parsers
+
+    add_choicelist_parsers(sub)
     return parser
 
 
@@ -461,6 +494,12 @@ def _add_user_parsers(sub) -> None:
     p.add_argument("superset_username", nargs="?")
     p.add_argument("--clear", action="store_true")
     p.set_defaults(handler=cmd_user_set_superset)
+
+    p = user.add_parser("set-session", help="how long a sign-in of the user lasts (--default: [session] of app.toml)")
+    p.add_argument("username")
+    p.add_argument("--days", type=int, help="days, used or not, the browser closed or not")
+    p.add_argument("--default", action="store_true")
+    p.set_defaults(handler=cmd_user_set_session)
 
     p = user.add_parser("set-admin", help="make a user an admin (--off to remove)")
     p.add_argument("username")

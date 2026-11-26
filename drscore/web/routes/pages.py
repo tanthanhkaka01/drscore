@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import secrets
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from drscore import siteurl
 from drscore.audit import audit, log_access
 from drscore.auth import service as auth
 from drscore.auth.passwords import verify_password
@@ -113,8 +114,7 @@ def report_html(code: str, request: Request, snapshot_id: int, user: User = Depe
 
 
 def origin_of(url: str) -> str:
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}"
+    return siteurl.origin_of(url)
 
 
 def _account(request: Request, user: User, error: str | None = None, status_code: int = 200):

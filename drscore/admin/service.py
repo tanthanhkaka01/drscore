@@ -42,7 +42,8 @@ class AdminError(Exception):
 def _user_json(u: User) -> dict[str, Any]:
     return {"username": u.username, "display_name": u.display_name, "email": u.email,
             "sso_subject": u.sso_subject, "superset_username": u.superset_username, "is_admin": u.is_admin,
-            "is_active": u.is_active, "must_change_password": u.must_change_password}
+            "is_active": u.is_active, "must_change_password": u.must_change_password,
+            "session_days": u.session_days}
 
 
 def get_user(session: Session, username: str) -> User:
@@ -105,6 +106,20 @@ def add_user(session: Session, actor: str, settings: AppSettings, username: str,
     return user
 
 
+def ensure_public_user(session: Session, actor: str, settings: AppSettings) -> User | None:
+    """The account public links run as by default (``[public] default_user``, 1.7.2): made once, with no
+    password (it can never sign in) and no right - the Public links page grants it the reports links
+    are made for. Returns the new user, or None when nothing was done (none configured, or it exists)."""
+    name = (settings.public.default_user or "").strip()
+    if not name or auth.find_user(session, name) is not None:
+        return None
+    user = User(username=auth.normalise_username(name), display_name="Public links", is_admin=False)
+    session.add(user)
+    session.flush()
+    audit(session, actor, "USER_ADD", "user", user.username, after=_user_json(user))
+    return user
+
+
 def ensure_default_admin(session: Session, actor: str, settings: AppSettings) -> User | None:
     """Gives a DRS database that has no administrator the administrator ``admin`` / ``admin``, who
     must choose another password at the first sign-in (owner decision 2026-10-07).
@@ -163,6 +178,23 @@ def set_user_superset(session: Session, actor: str, username: str, superset_user
     before = _user_json(user)
     user.superset_username = check_superset_account(session, user.username, superset_username, user.user_id)
     audit(session, actor, "USER_SET_SUPERSET", "user", user.username, before=before, after=_user_json(user))
+    return user
+
+
+MAX_SESSION_DAYS = 366
+
+
+def set_user_session_days(session: Session, actor: str, username: str, days: int | None) -> User:
+    """How long one sign-in of the user lasts, in days (``None``: the [session] limits of app.toml).
+
+    Applies from the user's next sign-in: a session already open keeps its end time.
+    """
+    if days is not None and not 1 <= days <= MAX_SESSION_DAYS:
+        raise AdminError(f"Session days must be between 1 and {MAX_SESSION_DAYS}.")
+    user = get_user(session, username)
+    before = _user_json(user)
+    user.session_days = days
+    audit(session, actor, "USER_SET_SESSION", "user", user.username, before=before, after=_user_json(user))
     return user
 
 

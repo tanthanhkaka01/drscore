@@ -107,6 +107,37 @@ tab for the parameters the user chose: the guest token DRS issues opens that one
 needs no Superset account), so two users with different parameters see different data at the same
 moment. Setup: `docs/superset-setup.md`. A report with row-filter rules cannot be embedded.
 
+## Mirrors and public links
+
+DRS 1.5.0 adds **mirrors** (`docs/mirror.md`): source tables copied one at a time into the DRS
+database on a schedule - full, or incremental by a modification time or a growing id - so heavy
+report queries run on the copy and not on the production source; several servers can share one
+copy, each row tagged with its source. And **public links** (`docs/public-links.md`): a secret URL
+that opens one report, read-only, without signing in, as one chosen user sees it - for a wall screen
+or a reader without an account. Since 1.5.1 a link can show the report's HTML design: drawn at once
+from the newest snapshot and refreshed behind the reader's back, with `publiclink set` to change what
+a link shows without changing its address. Since 1.6.2 a link may be **public or not**
+(`--public no`): the same address then opens the sign-in page first and shows the report to readers
+with a right on it, as they see it.
+
+DRS 1.6.0 adds **choice lists** (`docs/choice-lists.md`): a decision a report depends on - which kinds
+of equipment count, say - ticked by the person who decides on a page opened by a public link, and
+joined by the report as a table of the mirror schema.
+
+## Activity log, feedback, the AI agent, notices
+
+DRS 1.7.0 (`docs/feedback-typhon-notices.md`) logs **every request a user makes** - every change, every page
+opened, every refused or failed request, with what was sent and never a password or token - on the admin
+page *Activity log*; adds **Góp ý** (`/feedback`), where any signed-in user writes to the administrators with
+screenshots and gets answered in a thread; an **AI agent, Typhon** (`/ai`, off until it has a key), which
+answers questions about the reports with the user's own rights and reads a new feedback first; and
+**notices to a Telegram group and a Zalo group**, each off until its group and bot token are set. The AI key
+and bot tokens are kept encrypted (`python -m drscore secret set`), never in a file.
+Administrators get a **System** menu (activity log with filters and Excel, feedback, the AI agent's costs and
+questions, the notices). Each version's changes are in `drscore/CHANGELOG.md` / `CHANGELOG.vi.md`, shown in the
+portal (the version at the foot of the menu, "What's new"). The portal's frame is the **Shell Kit**
+(`drscore/web/static/kit/README.md`): standalone, made to be copied into other web apps.
+
 ## Administration and report design
 
 Everything can be done without SQL on the admin pages (`/admin/`, administrators only, see
@@ -203,7 +234,7 @@ adds `drs_grant_group.can_publish`).
 Windows (PowerShell):
 
 ```powershell
-cd D:\Projects\DRS
+cd V:\Projects\DRS
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[test]"
@@ -269,6 +300,7 @@ run uses a throw-away schema, dropped at the end. Use a test database, never a p
 | `python -m drscore serve [--host H] [--port P] [--workers N]` | Create / migrate the DRS database if needed, check the set-up, start the web server |
 | `python -m drscore user add NAME [--display-name D] [--email E] [--admin] [--sso-subject S] [--no-password]` | Add a user; the password is asked at a hidden prompt |
 | `python -m drscore user list / disable / enable / set-password / set-admin [--off]` | Users |
+| `python -m drscore user set-session USER --days N / --default` | How long one sign-in of USER lasts (1-366 days, used or not, the browser closed or not); `--default`: `[session]` of app.toml. From the next sign-in |
 | `python -m drscore user attr set USER NAME VALUE... / remove USER NAME [VALUE] / list USER` | Row-filter attributes (`*` = every value) |
 | `python -m drscore role add CODE [--name N] / list / member add CODE USER / member remove CODE USER` | Roles |
 | `python -m drscore grant group CODE [--design] [--publish] / grant report CODE / grant datasource CODE --user U \| --role R [--export\|--no-export] [--refresh\|--no-refresh]` | Grants |

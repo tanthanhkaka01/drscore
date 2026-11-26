@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from typing import Any
@@ -24,6 +25,8 @@ from drscore.errors import DRSError
 from drscore.settings import get_settings
 from drscore.web.deps import current_user, db_session
 from drscore.web.templating import render
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -490,7 +493,23 @@ def submit_draft(draft_id: int, request: Request, user: User = Depends(current_u
 
     design_service.submit_draft(session, user, draft_id)
     session.commit()
+    _tell_submitted(session, draft_id, user.username)
     return RedirectResponse(f"/design/drafts/{draft_id}?msg=submitted", status_code=303)
+
+
+def _tell_submitted(session: Session, draft_id: int, author: str) -> None:
+    """The approvers' Telegram / Zalo group hears of a draft waiting for them (drscore.notify)."""
+    from drscore import notify
+    from drscore.db.models import ReportDraft
+
+    try:
+        settings = get_settings().app
+        draft = session.get(ReportDraft, draft_id)
+        name = (draft.content_json or {}).get("report_name") if isinstance(draft.content_json, dict) else None
+        notify.notice(settings, "design_submitted",
+                      notify.design_submitted_text(settings, draft_id, draft.report_code, name, author))
+    except Exception:  # a notice never stands in the way of the submission
+        log.exception("could not tell about draft %s", draft_id)
 
 
 @router.post("/design/drafts/{draft_id}/withdraw")

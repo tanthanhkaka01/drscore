@@ -34,6 +34,7 @@ fields of the installed wheel (`importlib.metadata`), which is the package's own
 | babel | 2.18.0 | BSD-3-Clause | PyPI metadata (classifier "BSD License"), LICENSE |
 | itsdangerous | 2.2.0 | BSD-3-Clause | PyPI metadata (classifier "BSD License"), LICENSE.txt |
 | greenlet | 3.5.6 | MIT AND PSF-2.0 | PyPI metadata `License-Expression`, LICENSE, LICENSE.PSF. Needed by sqladmin (SQLAlchemy asyncio import) |
+| anthropic | 2.6.0 | Apache-2.0 | PyPI metadata `License-Expression`, checked 2026-11-09. The official Anthropic SDK, for the AI agent ([ai]); the API key stays on the server |
 | pytest | 9.1.1 | MIT | PyPI metadata (tests only) |
 | openpyxl | 3.1.5 | MIT | PyPI metadata (tests only) |
 
@@ -65,6 +66,12 @@ fields of the installed wheel (`importlib.metadata`), which is the package's own
 | starlette | 1.7.0 | BSD-3-Clause | PyPI metadata |
 | typing-extensions | 4.16.0 | PSF-2.0 | PyPI metadata |
 | typing-inspection | 0.4.4 | MIT | PyPI metadata |
+| docstring-parser | 0.18.0 | MIT | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
+| httpcore2 | 2.16.0 | BSD-3-Clause | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
+| httpx2 | 2.16.0 | BSD-3-Clause | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
+| jiter | 0.19.0 | MIT | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
+| sniffio | 1.3.1 | MIT OR Apache-2.0 | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
+| truststore | 0.10.5 | MIT | PyPI metadata, checked 2026-11-09 (pulled in by anthropic) |
 
 ## Front-end libraries (vendored into `drscore/web/static/vendor/`)
 
@@ -73,12 +80,23 @@ No CDN is used at run time.
 
 | Name | Version | Licence | Checked in |
 | --- | --- | --- | --- |
-| tabler | 1.6.1 | MIT | npm `@tabler/core` package.json, header of tabler.min.css / .js |
 | tabler-icons | 3.49.0 | MIT | npm `@tabler/icons-webfont`, LICENSE file |
 | tabulator | 6.6.1 | MIT | npm `tabulator-tables` package.json, LICENSE file |
 | echarts | 6.1.0 | Apache-2.0 | npm `echarts` package.json, LICENSE and NOTICE files |
 | htmx | 2.0.11 | 0BSD | npm `htmx.org` package.json, LICENSE file; tarball checked against the registry's sha512 |
 | superset-embedded-sdk | 0.4.0 | Apache-2.0 | npm `@superset-ui/embedded-sdk` package.json; bundles `@superset-ui/switchboard` (Apache-2.0) and `jwt-decode` (MIT) |
+
+## The site kit (copied into `drscore/web/static/kit/`)
+
+The look of the portal and of the admin pages: the site kit 1.7.0 of dbabrain.dev (Apache-2.0, the same author),
+copied unchanged with the licence files of what it carries. It loads nothing from another host.
+
+| Name | Version | Licence | Checked in |
+| --- | --- | --- | --- |
+| site kit (`kit.css`, `kit.js`, `bs/kit-bs.css`, `bs/kit-bs.js`) | 1.7.0 | Apache-2.0 | dbabrain.dev `kit/VERSION`, header of each file |
+| tabler (`bs/tabler.min.css`) | 1.6.1 | MIT | npm `@tabler/core`, header of tabler.min.css, `bs/LICENSE-tabler` |
+| bootstrap (`bs/bootstrap.bundle.min.js`) | 5.3.8 | MIT | npm `bootstrap`, header of the file, `bs/LICENSE-bootstrap` |
+| Manrope, Space Grotesk, JetBrains Mono, Noto Serif (`fonts/`) | @fontsource 5.3.0 | OFL-1.1 | `LICENSE` in each font's folder; latin, latin-ext and Vietnamese subsets |
 
 ## Software used beside DRS (not bundled)
 

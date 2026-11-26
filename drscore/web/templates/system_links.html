@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}{{ t('links.title') }}{% endblock %}
+{% block header %}<div class="page-pretitle">{{ t('nav.system_group') }}</div><h2 class="page-title">{{ t('links.title') }}</h2>
+<div>{{ t('links.lead') }}</div>{% endblock %}
+{% block content %}
+{% if not public_on %}<div class="alert alert-warning" role="alert">{{ t('links.public_off') }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if msg %}<div class="alert alert-success" role="alert">{{ t('links.msg_' ~ msg) }}</div>{% endif %}
+{% if made %}
+<div class="card mb-3 border-success">
+  <div class="card-body">
+    <h3 class="card-title text-green"><i class="ti ti-circle-check me-1"></i>{{ t('links.made', id=made.id, report=made.report) }}</h3>
+    <div class="text-secondary mb-2">{{ t('links.made_once') }}</div>
+    {% for u in made.urls %}<div class="mb-1"><input class="form-control font-monospace" readonly value="{{ u }}" aria-label="{{ t('links.address') }}"></div>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title"><i class="ti ti-link-plus me-1"></i>{{ t('links.new') }}</h3></div>
+  <div class="card-body">
+    <form method="get" action="/system/links" class="row g-2 align-items-end mb-3">
+      <div class="col-md-8">
+        <label class="form-label" for="pick-report">{{ t('links.report') }}</label>
+        <select class="form-select" id="pick-report" name="report">
+          <option value="">-</option>
+          {% for r in reports %}<option value="{{ r.code }}" {% if report and r.code == report.code %}selected{% endif %}>{{ r.code }} - {{ r.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4"><button class="btn btn-outline-primary w-100" type="submit">{{ t('links.choose') }}</button></div>
+    </form>
+
+    {% if report %}
+    <form method="post" action="/system/links" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+      <input type="hidden" name="report" value="{{ report.code }}">
+      <div class="col-md-4">
+        <label class="form-label" for="run-as">{{ t('links.run_as') }}</label>
+        <select class="form-select" id="run-as" name="run_as">
+          {% for u in users %}<option value="{{ u }}" {% if (form.run_as or default_user) == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+        </select>
+        <div class="form-hint">{{ t('links.run_as_hint', user=default_user) if default_user else t('links.run_as_hint_none') }}</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ t('links.buttons') }}</label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="can_export" checked><span class="form-check-label">{{ t('links.can_export') }}</span></label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" name="can_refresh"><span class="form-check-label">{{ t('links.can_refresh') }}</span></label>
+        <div class="form-hint">{{ t('links.buttons_hint', user=default_user) }}</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">{{ t('links.who') }}</label>
+        <label class="form-check"><input class="form-check-input" type="radio" name="public" value="yes" checked><span class="form-check-label">{{ t('links.who_public') }}</span></label>
+        <label class="form-check"><input class="form-check-input" type="radio" name="public" value="no"><span class="form-check-label">{{ t('links.who_signin') }}</span></label>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="view">{{ t('links.view') }}</label>
+        <select class="form-select" id="view" name="view">
+          {% for v in ('grid', 'html', 'bi') %}<option value="{{ v }}" {% if (form.view or 'grid') == v %}selected{% endif %}>{{ t('view.' ~ v) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="title">{{ t('links.page_title') }}</label>
+        <input class="form-control" id="title" name="title" value="{{ form.title or '' }}" placeholder="{{ report.name }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="expires">{{ t('links.expires') }}</label>
+        <input class="form-control" id="expires" name="expires" type="date" value="{{ form.expires or '' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="refresh">{{ t('links.refresh') }}</label>
+        <input class="form-control" id="refresh" name="refresh" type="number" min="30" step="1" value="{{ form.refresh or '' }}">
+      </div>
+      <div class="col-md-8">
+        <label class="form-label" for="frame">{{ t('links.frame') }}</label>
+        <input class="form-control font-monospace" id="frame" name="frame" maxlength="1000" value="{{ form.frame or '' }}" placeholder="* , https://hrms.example.com">
+        <div class="form-hint">{{ t('links.frame_hint') }}</div>
+      </div>
+      {% if params %}
+      <div class="col-12">
+        <label class="form-label">{{ t('links.params') }}</label>
+        <div class="table-responsive">
+          <table class="table table-sm table-vcenter mb-0">
+            <thead><tr><th>{{ t('links.param') }}</th><th>{{ t('links.param_editable') }}</th><th>{{ t('links.param_value') }}</th></tr></thead>
+            <tbody>
+              {% for p in params %}
+              <tr>
+                <td>{{ p.label }} <span class="text-secondary small">({{ p.name }})</span></td>
+                <td><label class="form-check m-0"><input class="form-check-input" type="checkbox" name="editable:{{ p.name }}" checked></label></td>
+                <td><input class="form-control form-control-sm" name="fixed:{{ p.name }}" placeholder="{{ p.default }}"></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="form-hint">{{ t('links.params_hint') }}</div>
+      </div>
+      {% endif %}
+      {% if lists %}
+      <div class="col-md-4">
+        <label class="form-label" for="choice-list">{{ t('links.choice_list') }}</label>
+        <select class="form-select" id="choice-list" name="choice_list"><option value="">-</option>
+          {% for c in lists %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+      </div>
+      {% endif %}
+      <div class="col-12"><button class="btn btn-primary" type="submit"><i class="ti ti-link-plus me-1"></i>{{ t('links.make') }}</button></div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3 class="card-title">{{ t('links.list') }}</h3></div>
+  <div class="sk-table-wrap">
+    <table class="table table-vcenter card-table sk-table-stack">
+      <thead><tr><th>#</th><th>{{ t('links.report') }}</th><th>{{ t('links.run_as') }}</th><th>{{ t('links.view') }}</th>
+        <th>{{ t('links.who') }}</th><th>{{ t('links.param_editable') }}</th><th>{{ t('links.frame_short') }}</th><th>{{ t('links.expires') }}</th>
+        <th>{{ t('links.uses') }}</th><th>{{ t('links.state') }}</th><th></th></tr></thead>
+      <tbody>
+        {% for l in links %}
+        <tr>
+          <td class="sk-nowrap">{{ l.id }} <span class="text-secondary small font-monospace">{{ l.token }}</span></td>
+          <td>{{ l.report }}{% if l.title %}<div class="small text-secondary">{{ l.title }}</div>{% endif %}</td>
+          <td>{{ l.run_as }}</td>
+          <td>{{ t('view.' ~ l.view) }}</td>
+          <td>{% if l.public %}{{ t('links.who_public_short') }}{% else %}{{ t('links.who_signin_short') }}{% endif %}</td>
+          <td class="small">{{ (l.editable or []) | join(', ') }}</td>
+          <td class="small">
+            <form method="post" action="/system/links/{{ l.id }}/frame" class="d-flex gap-1 m-0">
+              <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+              <input class="form-control form-control-sm font-monospace" name="frame" maxlength="1000" value="{{ l.frame or '' }}"
+                     placeholder="{{ t('links.frame_none') }}" aria-label="{{ t('links.frame') }}" style="min-width: 10rem">
+              <button class="btn btn-sm btn-outline-primary" type="submit" title="{{ t('links.frame_save') }}"><i class="ti ti-device-floppy"></i></button>
+            </form>
+          </td>
+          <td class="sk-nowrap">{{ l.expires_at.astimezone(tz).strftime('%d/%m/%Y') if l.expires_at else '-' }}</td>
+          <td class="sk-nowrap">{{ l.use_count }}{% if l.last_used_at %}<div class="small text-secondary">{{ l.last_used_at.astimezone(tz).strftime('%H:%M %d/%m/%Y') }}</div>{% endif %}</td>
+          <td>{% if l.active %}<span class="text-green">{{ t('links.on') }}</span>{% else %}<span class="text-secondary">{{ t('links.off') }}</span>{% endif %}</td>
+          <td class="sk-nowrap">
+            <form method="post" action="/system/links/{{ l.id }}/{{ 'off' if l.active else 'on' }}" class="d-inline m-0">
+              <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+              <button class="btn btn-sm {{ 'btn-outline-danger' if l.active else 'btn-outline-success' }}" type="submit">{{ t('links.switch_off') if l.active else t('links.switch_on') }}</button>
+            </form>
+            {% if l.active %}
+            <form method="post" action="/system/links/{{ l.id }}/{{ 'signin' if l.public else 'public' }}" class="d-inline m-0">
+              <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">{{ t('links.make_signin') if l.public else t('links.make_public') }}</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="11" class="text-center text-secondary py-4">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

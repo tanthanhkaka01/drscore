@@ -1,0 +1,22 @@
+/* The admin pages (sqladmin) in the portal's frame: what sqladmin's main.css and markup need beside the kit. */
+
+/* sqladmin's list card: its toolbar in one row that wraps. */
+.drs-admin .card-header { gap: .5rem; flex-wrap: wrap; }
+.drs-admin .card-header .card-title { font-weight: 700; color: var(--k-ink); }
+.drs-admin .table td, .drs-admin .table th { vertical-align: middle; }
+.drs-admin .table > tbody > tr:hover > * { background: var(--k-surface-2); }
+/* The row's view / edit / delete icons (Font Awesome): muted, the accent on hover. */
+.drs-admin .table a .fa-solid, .drs-admin .table a .fas { color: var(--k-muted); }
+.drs-admin .table a:hover .fa-solid, .drs-admin .table a:hover .fas { color: var(--k-accent); }
+/* Booleans: the kit's ok / bad colours. */
+.drs-admin .table .fa-check { color: var(--k-ok); }
+.drs-admin .table :is(.fa-times, .fa-xmark) { color: var(--k-bad); }
+/* Select2 follows the kit's fields in light and dark. */
+.drs-admin .select2-container--default .select2-selection { background: var(--k-surface); border-color: var(--k-line-strong); border-radius: 10px; min-height: 2.25rem; }
+.drs-admin .select2-container--default .select2-selection--single .select2-selection__rendered { color: var(--k-text); line-height: 2.25rem; }
+.drs-admin .select2-container--default .select2-selection--multiple .select2-selection__choice { background: var(--k-surface-2); border-color: var(--k-line); color: var(--k-text); }
+.select2-dropdown { background: var(--k-surface); border-color: var(--k-line); color: var(--k-text); }
+.select2-container--default .select2-search--dropdown .select2-search__field { background: var(--k-surface); color: var(--k-text); border-color: var(--k-line-strong); }
+.select2-container--default .select2-results__option--highlighted.select2-results__option--selectable { background: var(--k-accent); color: var(--k-on-accent); }
+/* The admin home's cards. */
+.drs-admin-card .btn { font-weight: 600; }

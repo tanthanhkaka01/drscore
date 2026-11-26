@@ -6,7 +6,7 @@ Updated in place when the procedure changes - never to match a run.
 
 - **Per version:** `TEST_VERSION_BEFORE_RELEASE_DETAIL_X_Y_Z.md` holds what that version changed and
   how its build, tests and deploy went; the current one is
-  [`…DETAIL_1_4_2.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_4_2.md). A sheet may add steps; it may
+  [`…DETAIL_1_7_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_7_0.md). A sheet may add steps; it may
   never drop one from §5.
 - **Where it runs:** the worker - the server where drscore runs beside Apache Superset, from a wheel
   built on the build PC (see the header of `docker-compose.yml` on the worker).
@@ -31,6 +31,19 @@ them "Deployed" is when the wheel reached the worker.
 | 1.4.0 | `pre-rule` | `59a5622` 2026-10-15T01:33Z | - | 2026-10-15T01:34Z | 2026-10-15T01:39Z | A report's dashboard may hold charts on other reports' datasets, each with its own parameters |
 | 1.4.1 | `pre-rule` | `4bcba6f` 2026-10-15T03:17Z | - | 2026-10-15T03:17Z | 2026-10-15T03:20Z | A DRS user has a Superset account field (migration 0012) |
 | 1.4.2 | `released` | `656f0d9` 2026-10-15T08:22Z | 2026-10-15T08:23Z, sha256 `800228e4…87e6f5` | 2026-10-15T08:24:20Z | 2026-10-15T08:40:18Z (tag `v1.4.2` pushed 08:39:33Z) | Solid status badges readable again (Tabler 1.6 `text-<colour>-fg`) |
+| 1.5.0 | `deployed` | `720af1e` 2026-10-22T07:49Z | 2026-10-22T07:49Z, sha256 `e875ab52…4cec3c` | 2026-10-22T07:51:05Z (first build of `79e300c` at 07:21:17Z, replaced) | - | Mirrors: source tables copied into the DRS database on a schedule (migration 0013); public links without login (migration 0014) |
+| 1.5.1 | `deployed` | `0edb7a5` 2026-10-22T09:44Z | 2026-10-22T09:44Z, sha256 `e4e1be1c…92fa2b7` | 2026-10-22T09:45Z (images `b685d9be0e30` / `2df422b40c80`) | - | Public links show an HTML design (migration 0015), refreshed behind the reader; `publiclink set` keeps a link's address |
+| 1.6.0 | `deployed` | - (not committed yet: wheel from working-tree git tree `f748153a`) | 2026-10-24T08:47Z, sha256 `8e0eb852…45c5f4` | 2026-10-24T08:48:41Z (first build `1570ebb` at 08:43:38Z, replaced; images `340f6b144744` / `39ac5881d569`) | - | Choice lists ticked on a public link, joined by reports (migration 0016) |
+| 1.6.1 | `deployed` | - (not committed yet: wheel from working-tree git tree `d75b5efc` of the private repository) | 2026-10-26T04:33Z, sha256 `31b7e79f…60130aa7` | 2026-10-26T04:46:20Z (images `aa140aa8bfd3` / `0854c0ac8c70`; dump before the upgrade) | - | Per-user session days (migration 0017): a view-only account stays signed in 30 days, the browser closed or not |
+| 1.6.2 | `deployed` | - (not committed yet: wheel from working-tree git tree `ff84dbdc` of the private repository) | 2026-10-26T05:49Z, sha256 `29e76a25…a87e0afe` | 2026-10-26T05:51:05Z (images `9074de1dcf3d` / `d9ffaf1aa270`; dump before the upgrade) | - | A link may be public or not (migration 0018): not public = sign-in and the reader's own rights; `publiclink enable` |
+| 1.6.3 | `deployed` | - (not committed yet: wheel from working-tree git tree `2d42d010` of the private repository) | 2026-10-26T06:49Z, sha256 `dc579054…62e6804` | 2026-10-26T06:50:51Z (images `2bc06d730430` / `0f9ececaa745`; dump before the upgrade) | - | A link's editable parameters show the value in use (defaults resolved) in an input of their type |
+| 1.6.4 | `deployed` | - (not committed yet: wheel from working-tree git tree `82881bbc` of the private repository) | 2026-11-09T02:45Z, sha256 `468d8d85…59e6aeaf` | 2026-11-09T02:52Z (image `5e517149138c` = 1.6.3 + the wheel swapped in; dump before the upgrade) | - | The portal and Superset opened at several addresses (an IP over http, a domain over https behind a proxy), all set in config |
+| 1.7.0 | `deployed` | - (not committed yet: wheel from working-tree git tree `d96e9677` of the private repository) | 2026-11-09T04:45Z, sha256 `123a9744…04bf0fbd` | 2026-11-09T04:49Z (images `bf8ff27ba91b` / `156e3469b4ab`; migration 0019; dump before the upgrade) | - | Activity log of every user action; Góp ý / feedback; the AI agent Typhon; Telegram / Zalo notices; encrypted integration secrets (migration 0019) |
+| 1.7.1 | `deployed` | - (not committed yet: wheel from working-tree git tree `c277004d` of the private repository) | 2026-11-09T07:35Z, sha256 `95f30306…3207eb0d` | 2026-11-09T07:36Z (image `ce9ff5d328e8`, 1.7.0 + the wheel; dump before the upgrade) | - | A table link shows the portal's report page without the menu: form, buttons (export all rows, print, refresh), filters, pages |
+| 1.7.2 | `deployed` | - (not committed yet: wheel from working-tree git tree `c44e422a`) | 2026-11-09T08:33Z, sha256 `eb3ffab4…db520894a` | 2026-11-09T08:34Z (image `bcd292571bac`, 1.7.1 + the wheel; dump before) | - | System -> Public links: links made on a page; default link account `user_public` |
+| 1.8.0 | `deployed` | - (not committed yet: wheel from working-tree git tree `837d3a75`) | 2026-11-11T01:37Z, sha256 `16ba3dd1…ed873700697765c3b86e35355bbd0293cd` | 2026-11-11T01:45Z (image `2f3571f0a5c9`, 1.7.2 + the wheel; migration 0020; dump before) | - | A public link may be shown in other sites' frames (`*` or listed sites), set per link on System -> Public links |
+| 1.9.0 | `deployed` | - (not committed yet: wheel from working-tree git tree `97a93551`) | 2026-11-11T02:16Z, sha256 `cec9b9a0…4a049f974c2` | 2026-11-11T02:21Z (image `8f337adcaf00`, 1.8.0 + the wheel; dump before) | - | Grid columns moved / hidden / pinned by the reader, kept by the browser; exports follow the columns shown |
+| 1.10.0 | `deployed` | `817a149` (private repository, not pushed) | 2026-11-26T07:29Z, sha256 `ad89467d…fafeea9730` | 2026-11-26T07:34Z (image `bcdc110d16dd`, 1.9.0 + the wheel; dump before); Superset image rebuilt `b78608fb1487` (old kept as `6.1.0-pre-1.10.0`) | - | The portal, its admin pages and Superset on the site kit 1.7.0; one grouped menu for portal and admin |
 
 ---
 
@@ -60,6 +73,9 @@ them "Deployed" is when the wheel reached the worker.
 - The full test suite passes (`pytest`). The count of passed tests goes in the sheet.
 - `pyproject.toml` carries the new version; the commit `Release X.Y.Z` holds only that version's
   work (no stray files, no internal names).
+- Since 1.7.0: `drscore/CHANGELOG.md` and `drscore/CHANGELOG.vi.md` start with that version (`## X.Y.Z — YYYY-MM-DD`,
+  lines for users, `[admin]` / `[designer]` marks); the portal shows them (version in the menu, "What's new").
+  `tests/test_changelog_system.py` fails without them.
 - The sheet `TEST_VERSION_BEFORE_RELEASE_DETAIL_X_Y_Z.md` is opened and the ledger row appended
   with status `deployed` pending.
 

@@ -119,11 +119,20 @@ class SessionInfo:
     must_change_password: bool = False
 
 
+def session_lifetime(user: User, settings: AppSettings) -> tuple[timedelta, timedelta]:
+    """(idle limit, absolute limit) of a session of this user: their ``session_days``, else [session]."""
+    if user.session_days:
+        days = timedelta(days=user.session_days)
+        return days, days
+    return timedelta(minutes=settings.session.idle_minutes), timedelta(hours=settings.session.absolute_hours)
+
+
 def create_session(session: Session, user: User, auth_method: str, settings: AppSettings,
                    client_ip: str | None = None, user_agent: str | None = None,
                    now: datetime | None = None) -> tuple[str, str]:
     """Creates a session. Returns (cookie token, CSRF token); only the token's hash is stored."""
     now = now or utcnow()
+    _, absolute = session_lifetime(user, settings)
     token = secrets.token_urlsafe(32)  # 256 bits
     csrf = secrets.token_hex(32)
     session.add(DbSession(
@@ -133,7 +142,7 @@ def create_session(session: Session, user: User, auth_method: str, settings: App
         auth_method=auth_method,
         created_at=now,
         last_seen_at=now,
-        expires_at=now + timedelta(hours=settings.session.absolute_hours),
+        expires_at=now + absolute,
         client_ip=(client_ip or None) and client_ip[:64],
         user_agent=(user_agent or None) and user_agent[:400],
     ))
@@ -145,7 +154,8 @@ def load_session(session: Session, token: str | None, settings: AppSettings,
     """The live session for a cookie token, or None.
 
     A session ends ``idle_minutes`` after its last request or ``absolute_hours`` after login,
-    whichever comes first; an ended or orphaned session row is deleted.
+    whichever comes first (``session_days`` of the user, when set, for both); an ended or orphaned
+    session row is deleted.
     """
     if not token:
         return None
@@ -154,8 +164,8 @@ def load_session(session: Session, token: str | None, settings: AppSettings,
     if row is None:
         return None
     user = session.get(User, row.user_id)
-    idle_limit = row.last_seen_at + timedelta(minutes=settings.session.idle_minutes)
-    if user is None or not user.is_active or now >= row.expires_at or now >= idle_limit:
+    if (user is None or not user.is_active or now >= row.expires_at
+            or now >= row.last_seen_at + session_lifetime(user, settings)[0]):
         session.delete(row)
         return None
     # Write last_seen_at at most once a minute, not on every request.
@@ -185,7 +195,10 @@ def end_all_sessions(session: Session, user_id: int) -> None:
 def purge_sessions(session: Session, settings: AppSettings, now: datetime | None = None) -> int:
     now = now or utcnow()
     idle_cut = now - timedelta(minutes=settings.session.idle_minutes)
+    # a user with session_days is never idle before expires_at (both are that many days)
+    long_lived = select(User.user_id).where(User.session_days.is_not(None))
     result = session.execute(
-        delete(DbSession).where((DbSession.expires_at <= now) | (DbSession.last_seen_at <= idle_cut))
+        delete(DbSession).where((DbSession.expires_at <= now)
+                                | ((DbSession.last_seen_at <= idle_cut) & DbSession.user_id.not_in(long_lived)))
     )
     return result.rowcount or 0

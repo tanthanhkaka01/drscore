@@ -25,6 +25,7 @@ from drscore.errors import DRSError
 from drscore.export import writers
 from drscore.bi import dataset as bi_dataset
 from drscore.bi import members as bi_members
+from drscore import siteurl
 from drscore.bi import superset
 from drscore.render import design, html
 from drscore.render.grid import grid_columns, project
@@ -251,7 +252,15 @@ def bi_payload(d: design.Design, settings: AppSettings, follows_report: bool,
     ``members``: it also reads the datasets of other reports, which run with the form (``bi_members``)."""
     if d.kind == "bi_link":
         return {"mode": "LINK", "url": d.url, "follows_report": False}
-    return {"mode": "EMBED", "superset_url": settings.bi.superset.base_url, "dashboard_id": d.dashboard_id,
+    page = siteurl.current_origin.get()
+    superset_url = siteurl.superset_url(settings.bi.superset)
+    if siteurl.mixed_content(page, superset_url):
+        # The browser would block the frame and show an empty box: say why instead.
+        raise DRSError("BI_ENGINE_UNAVAILABLE", admin_detail=(
+            f"The portal is open at {page} (https) and Superset at {superset_url} (http): a browser shows "
+            f"nothing from http inside an https page. Give Superset an https address and set it in "
+            f"[bi.superset] site_urls for {page}."))
+    return {"mode": "EMBED", "superset_url": superset_url, "dashboard_id": d.dashboard_id,
             "follows_report": follows_report, "members": members}
 
 
@@ -502,6 +511,24 @@ def bi_token(database: Database, settings: AppSettings, username: str, code: str
     return token
 
 
+def newest_snapshot(database: Database, settings: AppSettings, username: str, code: str, view: str,
+                    params: dict[str, Any]) -> tuple[int, bool] | None:
+    """The newest snapshot of the report for these parameters, live or in the history, and whether
+    it is out of its retention - without running anything: a page shows it at once and asks for a
+    fresh one behind it. None when the report never ran with them. Same checks as ``run``."""
+    from drscore.reports.service import prepare
+
+    with database.session() as s:
+        user = _user(s, username)
+        report, _ = require_report(s, user, code)
+        design.check(s, report, settings, design.require_view(report, view))
+        prep = prepare(s, report, params, settings, user_attributes=user_attributes(s, user))
+        snap = cache.newest_kept(s, report.report_id, prep.key)
+        if snap is None:
+            return None
+        return snap.snapshot_id, isinstance(snap, ReportSnapshot) and snap.expires_at > utcnow()
+
+
 def html_page(database: Database, settings: AppSettings, username: str, code: str, snapshot_id: int,
               csp_nonce: str, client_ip: str | None) -> str:
     """The rendered HTML design of a snapshot (iframe content). Same permission check and row
@@ -536,10 +563,29 @@ class ExportFile:
     path: Path | None = None  # XLSX: a temporary file the route deletes after sending
 
 
+def export_columns(columns: list, cols: str | None) -> list:
+    """The columns a file writes. ``cols``: the grid as the reader arranged it - the positions, among the
+    grid's columns (the visible ones, as a run answers them), of the columns shown, in their order on
+    screen (1.9.0). A column the design does not export stays out; one exported but never shown in the
+    grid comes after them. None: every exported column, in the design's order."""
+    exported = [c for c in columns if c.exported]
+    if not cols:
+        return exported
+    shown = [c for c in columns if c.visible]
+    try:
+        order = [int(x) for x in cols.split(",") if x.strip() != ""]
+    except ValueError:
+        raise DRSError("PARAM_INVALID", detail={"cols": "column positions separated by commas"}) from None
+    if not order or any(not 0 <= i < len(shown) for i in order) or len(set(order)) != len(order):
+        raise DRSError("PARAM_INVALID", detail={"cols": f"positions 0 to {len(shown) - 1}, each once"})
+    chosen = [shown[i] for i in order if shown[i].exported]
+    return chosen + [c for c in exported if not c.visible]
+
+
 def export(database: Database, settings: AppSettings, username: str, code: str, fmt: str, snapshot_id: int,
-           client_ip: str | None) -> ExportFile:
-    """All rows the user may see of the snapshot on screen, every exported column, whatever the
-    browser's sort or filter."""
+           client_ip: str | None, cols: str | None = None) -> ExportFile:
+    """All rows the user may see of the snapshot on screen, every exported column (or the ones the
+    reader shows, in their order: ``cols``), whatever the browser's sort or filter."""
     action = f"EXPORT_{fmt.upper()}" if fmt in EXPORT_MEDIA else "EXPORT_CSV"
     started = time.perf_counter()
     try:
@@ -553,7 +599,7 @@ def export(database: Database, settings: AppSettings, username: str, code: str, 
             snap = cache.by_id(s, report.report_id, snapshot_id)
             if snap is None:
                 raise DRSError("SNAPSHOT_GONE")
-            columns = [c for c in grid_columns(s, report.report_id, snap.columns_json) if c.exported]
+            columns = export_columns(grid_columns(s, report.report_id, snap.columns_json), cols)
             rows = project(filter_rows(s, user, report.report_id, [c["name"] for c in snap.columns_json],
                                        snap.rows_json), columns)
             meta = writers.ExportMeta(

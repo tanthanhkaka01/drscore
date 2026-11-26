@@ -8,6 +8,7 @@ import os
 import secrets
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -19,9 +20,10 @@ from drscore.db import get_database
 from drscore.errors import DRSError
 from drscore.logsetup import request_client, request_id, request_user, setup_logging
 from drscore.settings import get_settings
+from drscore.siteurl import SiteSchemeMiddleware, current_origin
 from drscore.web.deps import csrf_guard
 from drscore.web.i18n import error_message, request_locale
-from drscore.web.routes import api, auth, design, pages
+from drscore.web.routes import api, auth, changes, design, feedback, pages, public, system, typhon
 from drscore.web.templating import render
 
 log = logging.getLogger("drscore.web")
@@ -38,6 +40,16 @@ SECURITY_HEADERS = {
 
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def frames_self_only(csp: str | None) -> bool:
+    """True unless the page's own CSP lets other sites frame it (``frame-ancestors`` beyond 'self').
+    X-Frame-Options knows no list of sites, and a browser that reads it would refuse them all."""
+    for directive in (csp or "").split(";"):
+        name, _, value = directive.strip().partition(" ")
+        if name.lower() == "frame-ancestors":
+            return value.strip() in ("'self'", "'none'")
+    return True
 
 
 def same_origin(request: Request) -> bool:
@@ -88,8 +100,22 @@ def create_app() -> FastAPI:
     database = get_database()
     log.info("Starting %s on %s", settings.app.app.name, settings.database.describe())
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        scheduler = None
+        if settings.app.mirror.enabled:  # copies of source tables, refreshed in the background
+            from drscore.mirror.scheduler import MirrorScheduler
+
+            scheduler = MirrorScheduler(database, settings.app)
+            scheduler.start()
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                scheduler.stop()
+
     app = FastAPI(title=settings.app.app.name, docs_url=None, redoc_url=None, openapi_url=None,
-                  dependencies=[Depends(csrf_guard)])
+                  dependencies=[Depends(csrf_guard)], lifespan=lifespan)
     app.state.database = database
 
     @app.middleware("http")
@@ -97,6 +123,8 @@ def create_app() -> FastAPI:
         request_id.set(uuid.uuid4().hex[:12])
         request_user.set("-")
         request_client.set((request.client.host if request.client else None, request.headers.get("user-agent")))
+        # The address the browser used (the scheme is https behind a trusted proxy that says so).
+        current_origin.set(f"{request.url.scheme}://{request.url.netloc}")
         started = time.perf_counter()
         path = request.url.path
         if (path.startswith("/admin/") and (request.method in UNSAFE_METHODS or "/action/" in path)
@@ -106,6 +134,8 @@ def create_app() -> FastAPI:
         else:
             response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
+            if name == "X-Frame-Options" and not frames_self_only(response.headers.get("content-security-policy")):
+                continue  # a page that lets other sites frame it (a public link): its CSP says which
             response.headers.setdefault(name, value)
         # The session is loaded in a worker thread, so the user comes from request.state.
         auth_info = getattr(request.state, "auth", None)
@@ -130,7 +160,19 @@ def create_app() -> FastAPI:
     app.include_router(api.router)
     app.include_router(design.router)
     app.include_router(pages.router)
+    app.include_router(public.router)
+    app.include_router(feedback.router)
+    app.include_router(typhon.router)
+    app.include_router(changes.router)
+    app.include_router(system.router)
 
     from drscore.admin.web import mount as mount_admin
     mount_admin(app, database, settings.app, admin_secret(settings))
+    # Every request a user makes, with its outcome (drs_activity_log); outside the request context, so a
+    # request refused there (a cross-site admin form) is logged too.
+    from drscore.activity import ActivityMiddleware
+
+    app.add_middleware(ActivityMiddleware, settings=settings)
+    # Outermost: the scheme is set before anything reads the request's address.
+    app.add_middleware(SiteSchemeMiddleware, settings=settings)
     return app

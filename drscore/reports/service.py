@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
 from dataclasses import dataclass, field
@@ -158,6 +159,10 @@ def default_context(settings: AppSettings, user_attributes: dict[str, list[str]]
     return DefaultContext(now=local, user_attributes=user_attributes or {})
 
 
+#: A lower row limit for the runs made in this context (the AI agent's): ``prepare`` takes the smaller one.
+run_row_cap: contextvars.ContextVar[int | None] = contextvars.ContextVar("run_row_cap", default=None)
+
+
 def prepare(session: Session, report: Report, raw_params: dict[str, Any] | None, settings: AppSettings,
             now: datetime | None = None, user_attributes: dict[str, list[str]] | None = None) -> Prepared:
     defs = param_defs(session, report.report_id)
@@ -172,7 +177,8 @@ def prepare(session: Session, report: Report, raw_params: dict[str, Any] | None,
         ttl_seconds=max(0, report.cache_ttl_seconds or 0),
         serve_stale_on_error=report.serve_stale_on_error,
         timeout_seconds=min(report.timeout_seconds or limits.default_timeout_seconds, limits.hard_timeout_seconds),
-        max_rows=min(report.max_rows or limits.default_max_rows, limits.hard_max_rows),
+        max_rows=min(report.max_rows or limits.default_max_rows, limits.hard_max_rows,
+                     run_row_cap.get() or limits.hard_max_rows),
         source=src,
         query_text=report.query_text,
         defs=defs,

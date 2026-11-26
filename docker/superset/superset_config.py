@@ -40,6 +40,76 @@ if os.environ.get("SUPERSET_DB_PASSWORD"):
 if os.environ.get("DRS_BI_SQLITE"):
     PREVENT_UNSAFE_DB_CONNECTIONS = False
 
+# --------------------------------------------------------------------------------------------
+# The DRS look: the colours, type and corners of the site kit the DRS portal is drawn with (kit 1.7.0,
+# drscore/web/static/kit/), as Superset 6.1's Ant Design theme tokens, light and dark. The logo, the favicon
+# and Manrope are files of the image (Dockerfile, drs-theme/): Superset's fontUrls token takes only Google / Adobe
+# addresses, so the faces are loaded by templates/head_custom_extra.html from Superset's own /static.
+APP_NAME = "DRS BI"
+APP_ICON = "/static/assets/drs/logo.svg"
+FAVICONS = [{"href": "/static/assets/drs/favicon.svg", "type": "image/svg+xml"}]
+
+_KIT_TOKENS = {
+    "brandAppName": APP_NAME,
+    "brandLogoAlt": APP_NAME,
+    "brandLogoUrl": APP_ICON,
+    "brandLogoMargin": "16px 0",
+    "brandLogoHref": "/",
+    "brandLogoHeight": "28px",
+    "brandSpinnerUrl": None,
+    "brandSpinnerSvg": None,
+    "fontUrls": [],
+    "fontFamily": "Manrope, 'Segoe UI', Helvetica, Arial, sans-serif",
+    "fontFamilyCode": "'JetBrains Mono', 'IBM Plex Mono', 'Courier New', monospace",
+    "borderRadius": 10,
+    "borderRadiusLG": 14,
+    "borderRadiusSM": 8,
+    "transitionTiming": 0.3,
+    "brandIconMaxWidth": 37,
+    "fontSizeXS": "8",
+    "fontSizeXXL": "28",
+    "fontWeightNormal": "400",
+    "fontWeightLight": "300",
+    "fontWeightStrong": "600",
+    "fontWeightBold": "700",
+}
+THEME_DEFAULT = {
+    "token": {
+        **_KIT_TOKENS,
+        "colorPrimary": "#4f46e5",  # --k-accent-light
+        "colorLink": "#4f46e5",
+        "colorError": "#c02626",  # --k-bad
+        "colorWarning": "#b45309",  # --k-warn
+        "colorSuccess": "#15803d",  # --k-ok
+        "colorInfo": "#2563eb",
+        "colorTextBase": "#18181b",  # --k-ink
+        "colorBgBase": "#ffffff",  # --k-surface
+        "colorBgLayout": "#f4f4f5",  # --k-bg-alt
+        "colorBorder": "#d4d4d8",  # --k-line-strong
+        "colorBorderSecondary": "#e4e4e7",  # --k-line
+        "colorEditorSelection": "#e0e7ff",
+    },
+    "algorithm": "default",
+}
+THEME_DARK = {
+    "token": {
+        **_KIT_TOKENS,
+        "colorPrimary": "#8b93ff",  # --k-accent-dark
+        "colorLink": "#8b93ff",
+        "colorError": "#f87171",
+        "colorWarning": "#fbbf24",
+        "colorSuccess": "#4ade80",
+        "colorInfo": "#60a5fa",
+        "colorTextBase": "#fafafa",
+        "colorBgBase": "#121218",
+        "colorBgLayout": "#0c0c12",
+        "colorBorder": "#363640",
+        "colorBorderSecondary": "#26262f",
+        "colorEditorSelection": "#312e81",
+    },
+    "algorithm": "dark",
+}
+
 # Embedded dashboards (spec 14.3): a dashboard designed here is shown inside the DRS portal with a
 # short-lived guest token issued by the DRS server. The user needs no Superset account.
 FEATURE_FLAGS = {
@@ -50,8 +120,11 @@ GUEST_TOKEN_JWT_SECRET = os.environ["SUPERSET_GUEST_TOKEN_SECRET"]
 GUEST_TOKEN_JWT_ALGO = "HS256"
 GUEST_TOKEN_JWT_EXP_SECONDS = 300  # = [bi.superset] guest_token_ttl_seconds of DRS
 
-# Only the DRS portal may frame Superset dashboards.
-DRS_PORTAL_ORIGIN = os.environ.get("DRS_PORTAL_ORIGIN", "http://localhost:8080")
+# Only the DRS portal may frame Superset dashboards. DRS_PORTAL_ORIGIN holds every address the portal
+# is opened at, separated by commas or spaces - [app] base_url and [app] other_urls of DRS, for
+# example "http://10.0.0.5:8090, https://portal.example.com" (no trailing /).
+DRS_PORTAL_ORIGINS = [o.strip().rstrip("/") for o in
+                      os.environ.get("DRS_PORTAL_ORIGIN", "http://localhost:8080").replace(",", " ").split()]
 TALISMAN_ENABLED = True
 TALISMAN_CONFIG = {
     "content_security_policy": {
@@ -63,7 +136,7 @@ TALISMAN_CONFIG = {
         "object-src": "'none'",
         "style-src": ["'self'", "'unsafe-inline'"],
         "script-src": ["'self'", "'strict-dynamic'"],
-        "frame-ancestors": ["'self'", DRS_PORTAL_ORIGIN],
+        "frame-ancestors": ["'self'", *DRS_PORTAL_ORIGINS],
     },
     "content_security_policy_nonce_in": ["script-src"],
     "force_https": False,  # set True (and serve over HTTPS) in production
@@ -74,8 +147,11 @@ TALISMAN_CONFIG = {
     "frame_options": None,  # framing is governed by frame-ancestors above
 }
 
-# Behind a reverse proxy, uncomment:
-# ENABLE_PROXY_FIX = True
+# Behind a reverse proxy (Superset opened at an https address served by nginx / IIS): set
+# SUPERSET_PROXY_FIX=1, so that Superset writes its own links and redirects with the address the
+# browser used (X-Forwarded-Proto / -Host / -Port of the proxy). Opened directly, nothing changes.
+ENABLE_PROXY_FIX = os.environ.get("SUPERSET_PROXY_FIX", "").strip().lower() in ("1", "true", "yes")
+PROXY_FIX_CONFIG = {"x_for": 1, "x_proto": 1, "x_host": 1, "x_port": 1, "x_prefix": 1}
 
 
 # --------------------------------------------------------------------------------------------

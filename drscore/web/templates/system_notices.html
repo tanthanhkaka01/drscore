@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ t('system.notices') }}{% endblock %}
+{% block header %}<div class="page-pretitle">{{ t('nav.system_group') }}</div><h2 class="page-title">{{ t('system.notices') }}</h2>
+<div>{{ t('system.notices_lead') }}</div>{% endblock %}
+{% block content %}
+{% if msg %}<div class="alert {{ 'alert-success' if msg == 'sent' else 'alert-danger' }}" role="alert">{{ t('system.notice_' ~ msg) }}</div>{% endif %}
+<div class="sk-stats">
+  {% for c in channels %}
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label"><i class="ti ti-{{ 'brand-telegram' if c.name == 'telegram' else 'message-circle' }} me-1"></i>{{ c.name | capitalize }}</div>
+    <div class="sk-stat-value">{% if c.ready %}<span class="text-green">{{ t('system.ai_on') }}</span>{% else %}<span class="text-secondary">{{ t('system.ai_off') }}</span>{% endif %}</div>
+    <div class="sk-stat-note mb-2">{{ c.why }}</div>
+    {% if c.ready %}
+    <form method="post" action="/system/notices/test" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+      <input type="hidden" name="channel" value="{{ c.name }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit"><i class="ti ti-send me-1"></i>{{ t('system.send_test') }}</button>
+    </form>
+    {% endif %}
+  </div></div>
+  {% endfor %}
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label">{{ t('system.events') }}</div>
+    <div class="small mt-1">{% for e in events %}<span class="badge bg-secondary-lt me-1 mb-1">{{ e }}</span>{% endfor %}</div>
+  </div></div>
+</div>
+<div class="card">
+  <div class="card-header"><h3 class="card-title">{{ t('system.notices_sent') }}</h3></div>
+  <div class="sk-table-wrap sk-table-tall">
+    <table class="table table-vcenter card-table sk-table-stack">
+      <thead><tr><th>{{ t('system.col_time') }}</th><th>{{ t('system.channel') }}</th><th>{{ t('system.event') }}</th>
+        <th>{{ t('system.text') }}</th><th>{{ t('system.col_result') }}</th></tr></thead>
+      <tbody>
+        {% for n in notices %}
+        <tr>
+          <td class="sk-nowrap">{{ n.at.astimezone(tz).strftime('%H:%M %d/%m/%Y') }}</td>
+          <td>{{ n.channel }}</td><td>{{ n.event }}</td>
+          <td class="small" style="max-width: 36rem; white-space: pre-wrap">{{ n.text }}</td>
+          <td>{% if n.ok %}<span class="text-green">{{ t('system.ok') }}</span>{% else %}<span class="text-red">{{ t('system.error') }}</span><div class="small text-secondary">{{ n.error }}</div>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="text-center text-secondary py-4">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

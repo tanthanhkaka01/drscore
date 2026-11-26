@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ t('changes.title') }}{% endblock %}
+{% block header %}<h2 class="page-title">{{ t('changes.title') }}</h2>
+<div class="text-secondary mt-1">{{ t('changes.lead', v=app_version) }}</div>{% endblock %}
+{% block content %}
+<div class="row row-cards">
+  <div class="col-lg-9">
+    {% for r in releases %}
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title">{{ t('changes.version') }} {{ r.version }}</h3>
+        {% if r.version == app_version %}<span class="badge bg-green text-green-fg ms-2">{{ t('changes.current') }}</span>{% endif %}
+        <div class="card-actions text-secondary">{{ r.date }}</div>
+      </div>
+      <div class="card-body">
+        <ul class="mb-0 drs-changes">
+          {% for c in r.changes %}
+          <li>{{ c.text }}
+            {% if c.details %}<ul>{% for d in c.details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -3,19 +3,22 @@
 [app]
 name = "DRS"
 base_url = "http://localhost:8080"
+# Other addresses users open DRS at, e.g. a domain served over https by a reverse proxy. Each page
+# is built for the address it was opened at; nothing else names an address.
+# other_urls = ["https://portal.example.com"]
 host = "127.0.0.1"
 port = 8080
 default_locale = "vi"                 # "vi" | "en"
 timezone = "Asia/Ho_Chi_Minh"
 secret_key_env = "DRS_SECRET_KEY"     # Fernet key: encrypts datasource passwords
 workers = 1                           # web server processes; 2-4 on a production server
-forwarded_allow_ips = "127.0.0.1"     # reverse proxy (nginx / IIS) trusted for the client IP and https
+forwarded_allow_ips = "127.0.0.1"     # reverse proxies (nginx / IIS), comma-separated IPs, trusted for the client IP and https
 auto_migrate = true                   # `serve` creates the schema / tables and applies migrations first
 
 [session]
 idle_minutes = 60
 absolute_hours = 12
-cookie_secure = false                 # true when served over HTTPS
+cookie_secure = false                 # true when served over HTTPS only (keep false while an http address is in use)
 
 [auth.local]
 enabled = true
@@ -60,6 +63,9 @@ formula_guard = true
 [bi.superset]
 enabled = false
 base_url = "http://localhost:8088"    # as the browser reaches Superset
+# Superset's address for the browser on a page of another portal address (other_urls). An https
+# portal page can show only an https Superset.
+# site_urls = { "https://portal.example.com" = "https://bi.example.com" }
 api_url = "http://localhost:8088"     # as the DRS server reaches Superset
 username = "drs_service"
 password_env = "DRS_SUPERSET_PASSWORD"
@@ -70,3 +76,74 @@ admin_username = ""                   # a Superset account with the Admin role, 
 admin_password_env = "DRS_SUPERSET_ADMIN_PASSWORD" # environment variable holding the admin password
 database_name = "DRS"                 # the Superset database connection over the bi schema
 design_role_prefix = "DRS_DESIGN_"    # one Superset role per report group: DRS_DESIGN_<GROUP_CODE>
+
+[mirror]
+# Copies of source tables in the DRS database (PostgreSQL: schema [postgresql] mirror_schema; SQLite:
+# the file [sqlite] mirror_path), refreshed on a schedule: heavy report queries read the copy, not the
+# production source. Each copied table is defined with `python -m drscore mirror add` (docs/mirror.md).
+enabled = false                       # the server refreshes the mirrors that are due
+poll_seconds = 60
+batch_rows = 10000
+timeout_seconds = 3600                # the longest one source query may take
+lock_minutes = 15                     # a run's claim, renewed while it copies; a stopped server frees it
+read_role = ""                        # PostgreSQL role given SELECT on the mirror tables
+
+[public]
+# Public links: one report opened by a secret URL, without signing in - a wall screen, a reader with
+# no DRS account. Made by an administrator on System -> Public links (or `python -m drscore publiclink add`).
+enabled = false                       # off: every /p/... address answers "not found"
+theme = "dark"                        # "dark" | "light": the page around the report
+locale = ""                           # "en" | "vi": the page's language; empty = the reader's / default_locale
+default_user = "user_public"            # the account links run as by default (1.7.2): made at start-up, no password
+
+[activity]
+# The activity log (admin: Logs -> Activity log): every change, every refused or failed request, and the
+# pages opened, with what was sent (passwords, tokens and keys never kept).
+enabled = true
+page_opens = true                     # also log every page opened, not only changes
+max_field_chars = 4000                # one sent value longer than this is cut in the log
+
+[feedback]
+# Góp ý: any signed-in user sends feedback from the portal (/feedback); administrators answer it there.
+enabled = true
+files_dir = "runtime/feedback"        # where the files sent with a feedback are kept
+max_files = 5
+max_file_mb = 8
+
+[ai]
+# The AI agent (docs/feedback-typhon-notices.md). Off until enabled AND a key is found: the environment
+# variable api_key_env, else the encrypted secret `python -m drscore secret set ai.api_key`. Never in a file.
+enabled = false
+name = "Typhon"                       # what the portal calls it
+api_key_env = "DRS_AI_API_KEY"
+base_url = ""                         # empty: the Anthropic API
+model = "claude-opus-5-5"
+effort = "medium"                     # "low" | "medium" | "high" | "xhigh" | "max"
+max_tokens = 8000
+timeout_seconds = 180
+max_tool_rounds = 8
+allowed_users = []                    # usernames allowed to ask (administrators always)
+allowed_roles = []                    # role codes allowed to ask; both lists empty = every user
+read_report_data = false              # true: it may run a report for the asker, with the asker's rights
+max_rows_to_model = 200               # rows of a report it reads at most
+max_report_rows = 10000               # a report it runs stops above this: it is told to narrow the parameters
+questions_per_user_per_day = 50       # 0 = no limit
+monthly_budget_usd = 20.0             # 0 = no limit; when reached it stops until next month
+feedback_intake = true                # it reads a new feedback first: a reply to the sender, a note for admins
+
+[notify]
+# Notices to a Telegram group and a Zalo group. A channel sends only when its chat_id AND its bot token
+# are set (the environment variable bot_token_env, else `python -m drscore secret set telegram.bot_token`).
+events = ["feedback_new", "feedback_comment", "feedback_reopened", "design_submitted", "ai_budget"]
+prefix = ""                           # put before every notice, e.g. "[TEST] "
+timeout_seconds = 10
+
+[notify.telegram]
+chat_id = ""                          # the group's id, e.g. "-1001234567890"; empty = off
+bot_token_env = "DRS_TELEGRAM_BOT_TOKEN"
+api_url = "https://api.telegram.org"
+
+[notify.zalo]
+chat_id = ""                          # the group's id; empty = off
+bot_token_env = "DRS_ZALO_BOT_TOKEN"
+api_url = "https://bot-api.zaloplatforms.com"

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ t('system.ai', name=ai_name) }}{% endblock %}
+{% block header %}<div class="page-pretitle">{{ t('nav.system_group') }}</div><h2 class="page-title">{{ t('system.ai', name=ai_name) }}</h2>{% endblock %}
+{% macro money(v) %}${{ '%.4f' | format(v) }}{% endmacro %}
+{% macro num(v) %}{{ '{:,}'.format(v) | replace(',', '.') }}{% endmacro %}
+{% block content %}
+<ul class="nav nav-pills mb-3">
+  {% for k in ('overview', 'history', 'settings') %}
+  <li class="nav-item"><a class="nav-link {% if tab == k %}active{% endif %}" href="?tab={{ k }}">{{ t('system.ai_tab_' ~ k) }}</a></li>
+  {% endfor %}
+</ul>
+
+{% if tab == 'overview' %}
+<div class="sk-stats">
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label">{{ t('system.ai_state') }}</div>
+    <div class="sk-stat-value">{% if d.state.on %}<span class="text-green">{{ t('system.ai_on') }}</span>{% else %}<span class="text-secondary">{{ t('system.ai_off') }}</span>{% endif %}</div>
+    <div class="sk-stat-note">{{ d.state.why }}</div>
+  </div></div>
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label">{{ t('system.ai_cost_month') }}</div>
+    <div class="sk-stat-value">{{ money(d.month.cost) }}</div>
+    <div class="sk-stat-note">{% if d.settings.monthly_budget_usd %}{{ t('system.ai_budget', v='%.2f' | format(d.settings.monthly_budget_usd)) }}{% else %}{{ t('system.ai_no_budget') }}{% endif %}</div>
+  </div></div>
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label">{{ t('system.ai_tokens_today') }}</div>
+    <div class="sk-stat-value">{{ num(d.today.tokens) }}</div>
+    <div class="sk-stat-note">{{ t('system.ai_today_note', q=d.today.questions, r=d.today.refused, e=d.today.errors) }}</div>
+  </div></div>
+  <div class="card sk-stat"><div class="card-body">
+    <div class="sk-stat-label">{{ t('system.ai_tokens_month') }}</div>
+    <div class="sk-stat-value">{{ num(d.month.tokens) }}</div>
+    <div class="sk-stat-note">{{ t('system.ai_tokens_note', i=num(d.month.input), o=num(d.month.output), r=num(d.month.cache_read), w=num(d.month.cache_write)) }}</div>
+  </div></div>
+</div>
+<p class="small text-secondary">{{ t('system.ai_all_time', q=d.all_time.questions, tk=num(d.all_time.tokens), c=money(d.all_time.cost)) }}</p>
+
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">{{ t('system.ai_by_user') }}</h3></div>
+  <div class="sk-table-wrap">
+    <table class="table table-vcenter card-table sk-table-stack">
+      <thead><tr><th>{{ t('system.col_user') }}</th><th class="text-end">{{ t('system.ai_questions') }}</th>
+        <th class="text-end">{{ t('system.ai_tokens') }}</th><th class="text-end">{{ t('system.ai_cost') }}</th><th>{{ t('system.ai_last') }}</th></tr></thead>
+      <tbody>
+        {% for u in d.by_user %}
+        <tr><td>{{ u.name or u.username }}<div class="text-secondary small">{{ u.username }}</div></td>
+          <td class="text-end">{{ u.questions }}</td><td class="text-end">{{ num(u.tokens) }}</td><td class="text-end">{{ money(u.cost) }}</td>
+          <td class="sk-nowrap">{{ u.last.astimezone(tz).strftime('%H:%M %d/%m') }}</td></tr>
+        {% else %}<tr><td colspan="5" class="text-center text-secondary py-3">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="row row-cards">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">{{ t('system.ai_by_day') }}</h3></div>
+      <div class="sk-table-wrap">
+        <table class="table table-vcenter card-table">
+          <thead><tr><th>{{ t('system.ai_day') }}</th><th class="text-end">{{ t('system.ai_questions') }}</th><th class="text-end">{{ t('system.ai_refused') }}</th>
+            <th class="text-end">{{ t('system.ai_tokens') }}</th><th class="text-end">{{ t('system.ai_cost') }}</th></tr></thead>
+          <tbody>
+            {% for x in d.by_day %}
+            <tr><td>{{ x.day }}</td><td class="text-end">{{ x.questions }}</td><td class="text-end">{{ x.refused }}</td>
+              <td class="text-end">{{ num(x.tokens) }}</td><td class="text-end">{{ money(x.cost) }}</td></tr>
+            {% else %}<tr><td colspan="5" class="text-center text-secondary py-3">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">{{ t('system.ai_by_model') }}</h3></div>
+      <div class="sk-table-wrap">
+        <table class="table table-vcenter card-table">
+          <thead><tr><th>{{ t('system.ai_model') }}</th><th class="text-end">{{ t('system.ai_questions') }}</th>
+            <th class="text-end">{{ t('system.ai_tokens') }}</th><th class="text-end">{{ t('system.ai_cost') }}</th></tr></thead>
+          <tbody>
+            {% for m in d.by_model %}
+            <tr><td>{{ m.model }}</td><td class="text-end">{{ m.questions }}</td><td class="text-end">{{ num(m.tokens) }}</td><td class="text-end">{{ money(m.cost) }}</td></tr>
+            {% else %}<tr><td colspan="4" class="text-center text-secondary py-3">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% elif tab == 'history' %}
+<div class="card">
+  <div class="sk-table-wrap sk-table-tall">
+    <table class="table table-vcenter card-table sk-table-stack">
+      <thead><tr><th>{{ t('system.col_time') }}</th><th>{{ t('system.col_user') }}</th><th>{{ t('system.ai_question') }}</th>
+        <th>{{ t('system.ai_answer') }}</th><th>{{ t('system.col_result') }}</th><th class="text-end">{{ t('system.ai_tokens') }}</th><th class="text-end">{{ t('system.ai_cost') }}</th></tr></thead>
+      <tbody>
+        {% for u in d.latest %}
+        <tr>
+          <td class="sk-nowrap">{{ u.at.astimezone(tz).strftime('%H:%M %d/%m/%Y') }}{% if u.purpose == 'feedback' %}<div class="small text-secondary">{{ t('system.ai_purpose_feedback') }}</div>{% endif %}</td>
+          <td>{{ u.user }}</td>
+          <td class="small" style="max-width: 22rem">{{ u.question }}{% if u.tools %}<div class="text-secondary">{{ t('system.ai_tools') }}: {{ u.tools }}</div>{% endif %}</td>
+          <td class="small" style="max-width: 30rem"><details><summary class="text-truncate d-block">{{ u.answer[:120] or u.error }}</summary><div style="white-space: pre-wrap">{{ u.answer or u.error }}</div></details></td>
+          <td>{% if u.status == 'ok' %}<span class="text-green">{{ t('system.ok') }}</span>{% elif u.status == 'refused' %}<span class="text-orange">{{ t('system.ai_refused') }}</span>{% else %}<span class="text-red">{{ t('system.error') }}</span>{% endif %}
+            {% if u.ms %}<div class="small text-secondary">{{ (u.ms / 1000) | round(1) }} s</div>{% endif %}</td>
+          <td class="text-end">{{ num(u.tokens) }}</td><td class="text-end">{{ money(u.cost) }}</td>
+        </tr>
+        {% else %}<tr><td colspan="7" class="text-center text-secondary py-4">{{ t('system.no_rows') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <p class="text-secondary">{{ t('system.ai_settings_note') }}</p>
+    <dl class="row mb-0">
+      {% for key in ('enabled', 'name', 'model', 'effort', 'read_report_data', 'allowed_roles', 'questions_per_user_per_day', 'monthly_budget_usd', 'feedback_intake', 'max_tokens', 'max_tool_rounds', 'api_key_env') %}
+      <dt class="col-sm-5 col-lg-4"><code>{{ key }}</code></dt><dd class="col-sm-7 col-lg-8">{{ d.settings[key] if d.settings[key] not in ([], '') else '—' }}</dd>
+      {% endfor %}
+    </dl>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

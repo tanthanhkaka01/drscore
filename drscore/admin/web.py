@@ -18,7 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from markupsafe import escape
+from jinja2 import ChoiceLoader, FileSystemLoader
+from markupsafe import Markup, escape
 from pydantic import ValidationError
 from sqladmin import Admin, ModelView, action
 from sqladmin import i18n as sqladmin_i18n
@@ -35,12 +36,16 @@ from drscore.auth import service as auth
 from drscore.db.engine import Database
 from drscore.db.models import (
     AccessLog,
+    ActivityLog,
+    AiUsage,
     AuditLog,
     BiDataset,
     Datasource,
+    Feedback,
     GrantDatasource,
     GrantGroup,
     GrantReport,
+    NoticeLog,
     Report,
     ReportColumn,
     ReportGroup,
@@ -53,6 +58,7 @@ from drscore.db.models import (
 )
 from drscore.errors import DRSError
 from drscore.settings import AppSettings
+from drscore.web.templating import TEMPLATES_DIR as PORTAL_TEMPLATES, shell_context
 
 TRANSLATIONS = Path(__file__).resolve().parent / "translations"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -122,6 +128,9 @@ class DrsAdminAuth(AuthenticationBackend):
         if not info.is_admin:
             return Response("403 - administrators only", status_code=403, media_type="text/plain")
         request.state.admin_user = info.username
+        request.state.auth = info
+        # The portal's frame (menu, top bar) for the admin pages: built here, off the event loop.
+        request.state.drs_shell = await run_in_threadpool(shell_context, request)
         return True
 
 
@@ -601,15 +610,18 @@ class UserAdmin(AuditedView, model=User):
     column_searchable_list = [User.username, User.display_name, User.email]
     column_sortable_list = [User.username, User.last_login_at]
     form_columns = [User.username, User.display_name, User.email, User.sso_subject, User.superset_username,
-                    User.is_admin, User.is_active, User.must_change_password, User.roles]
+                    User.is_admin, User.is_active, User.must_change_password, User.session_days, User.roles]
     form_args = {"superset_username": {"description": _(
         "The user's account in Superset, when they sign in there with another name. "
-        "Empty: the Superset account named like the DRS user.")}}
+        "Empty: the Superset account named like the DRS user.")},
+                 "session_days": {"description": _(
+        "Days one sign-in lasts, used or not, the browser closed or not (1-366), from the next sign-in. "
+        "Empty: the session limits of app.toml.")}}
     column_details_exclude_list = [User.password_hash, User.user_id]
     column_labels = {"username": L("User name"), "display_name": L("Name"), "email": L("E-mail"),
                      "sso_subject": L("SSO subject"), "superset_username": L("Superset account"),
                      "is_admin": L("Administrator"), "is_active": L("Active"),
-                     "must_change_password": L("Must change password"),
+                     "must_change_password": L("Must change password"), "session_days": L("Session days"),
                      "roles": L("Roles"), "last_login_at": L("Last sign-in"), "new_password": L("New password"),
                      "failed_login_count": L("Failed sign-ins"), "locked_until": L("Locked until")}
 
@@ -634,6 +646,10 @@ class UserAdmin(AuditedView, model=User):
             request.state.end_sessions = True
         if not is_created and obj.is_active and data.get("is_active") is False:
             request.state.end_sessions = True
+        from drscore.admin.service import MAX_SESSION_DAYS
+        days = data.get("session_days")
+        if days is not None and not 1 <= days <= MAX_SESSION_DAYS:
+            raise AdminInputError(f"Session days: 1 to {MAX_SESSION_DAYS}, or empty")
 
     async def on_model_change(self, data, model, is_created, request):
         await super().on_model_change(data, model, is_created, request)
@@ -773,6 +789,76 @@ class AuditLogAdmin(ReadOnlyView, model=AuditLog):
     column_default_sort = [(AuditLog.audit_id, True)]
 
 
+def _action_label(model, attribute) -> str:
+    from drscore.activity import label
+
+    return label(model.action, sqladmin_i18n.get_locale())
+
+
+class ActivityLogAdmin(ReadOnlyView, model=ActivityLog):
+    name = _("Activity log")
+    name_plural = _("Activity log")
+    icon = "fa-solid fa-person-walking"
+    column_list = [ActivityLog.logged_at, ActivityLog.username, ActivityLog.action, ActivityLog.object_key,
+                   ActivityLog.outcome, ActivityLog.status_code, ActivityLog.method, ActivityLog.path,
+                   ActivityLog.duration_ms, ActivityLog.client_ip]
+    column_searchable_list = [ActivityLog.username, ActivityLog.action, ActivityLog.path, ActivityLog.object_key]
+    column_sortable_list = [ActivityLog.logged_at, ActivityLog.username, ActivityLog.action, ActivityLog.outcome]
+    column_default_sort = [(ActivityLog.activity_id, True)]
+    column_formatters = {ActivityLog.action: _action_label}
+    column_formatters_detail = {ActivityLog.action: _action_label}
+    column_labels = {**ReadOnlyView.column_labels, "outcome": L("Outcome"), "status_code": L("HTTP status"),
+                     "method": L("Method"), "path": L("Address"), "query_text": L("Query"),
+                     "detail_json": L("Sent")}
+
+
+class FeedbackAdmin(ReadOnlyView, model=Feedback):
+    """The list; a feedback is answered and handled on its portal page (/feedback/{id})."""
+
+    name = _("Feedback")
+    name_plural = _("Feedback")
+    icon = "fa-solid fa-comment-dots"
+    column_list = [Feedback.feedback_id, Feedback.created_at, Feedback.username, Feedback.kind, Feedback.urgency,
+                   Feedback.status, Feedback.page_path, Feedback.handled_by]
+    column_searchable_list = [Feedback.username, Feedback.message, Feedback.page_path]
+    column_sortable_list = [Feedback.feedback_id, Feedback.created_at, Feedback.status, Feedback.username]
+    column_default_sort = [(Feedback.feedback_id, True)]
+    column_details_exclude_list = [Feedback.comments, Feedback.files]
+    column_formatters = {Feedback.feedback_id: lambda m, a: Markup(
+        f'<a href="/feedback/{int(m.feedback_id)}">#{int(m.feedback_id)}</a>')}
+    column_labels = {**ReadOnlyView.column_labels, "feedback_id": L("Number"), "kind": L("Kind"),
+                     "urgency": L("Urgency"), "message": L("Message"), "page_path": L("Page"),
+                     "handled_by": L("Handled by"), "ai_note": L("AI note")}
+
+
+class AiUsageAdmin(ReadOnlyView, model=AiUsage):
+    name = _("AI agent questions")
+    name_plural = _("AI agent questions")
+    icon = "fa-solid fa-wand-magic-sparkles"
+    column_list = [AiUsage.asked_at, AiUsage.username, AiUsage.purpose, AiUsage.status, AiUsage.question,
+                   AiUsage.model, AiUsage.input_tokens, AiUsage.output_tokens, AiUsage.cost_usd, AiUsage.duration_ms]
+    column_searchable_list = [AiUsage.username, AiUsage.question, AiUsage.answer]
+    column_sortable_list = [AiUsage.asked_at, AiUsage.username, AiUsage.cost_usd, AiUsage.status]
+    column_default_sort = [(AiUsage.usage_id, True)]
+    column_formatters = {AiUsage.question: lambda m, a: (m.question or "")[:120]}
+    column_labels = {**ReadOnlyView.column_labels, "asked_at": L("Time"), "purpose": L("Purpose"),
+                     "question": L("Question"), "answer": L("Answer"), "model": L("Model"),
+                     "input_tokens": L("Input tokens"), "output_tokens": L("Output tokens"),
+                     "cost_usd": L("Cost (USD)"), "tools_json": L("Tools run")}
+
+
+class NoticeLogAdmin(ReadOnlyView, model=NoticeLog):
+    name = _("Notices sent")
+    name_plural = _("Notices sent")
+    icon = "fa-solid fa-paper-plane"
+    column_list = [NoticeLog.sent_at, NoticeLog.channel, NoticeLog.event, NoticeLog.is_ok, NoticeLog.error_message]
+    column_searchable_list = [NoticeLog.event, NoticeLog.text_sent]
+    column_sortable_list = [NoticeLog.sent_at, NoticeLog.channel, NoticeLog.event]
+    column_default_sort = [(NoticeLog.notice_id, True)]
+    column_labels = {**ReadOnlyView.column_labels, "sent_at": L("Time"), "channel": L("Channel"),
+                     "event": L("Event"), "is_ok": L("Sent"), "text_sent": L("Text"), "chat_id": L("Group")}
+
+
 class HistoryAdmin(ReadOnlyView, model=ReportSnapshotHistory):
     name = _("Snapshot history")
     name_plural = _("Snapshot history")
@@ -786,7 +872,24 @@ class HistoryAdmin(ReadOnlyView, model=ReportSnapshotHistory):
 
 
 VIEWS = [GroupAdmin, ReportAdmin, ParamAdmin, ColumnAdmin, RowFilterAdmin, DatasourceAdmin, UserAdmin, AttributeAdmin,
-         RoleAdmin, GrantGroupAdmin, GrantReportAdmin, GrantDatasourceAdmin, AccessLogAdmin, AuditLogAdmin, HistoryAdmin]
+         RoleAdmin, GrantGroupAdmin, GrantReportAdmin, GrantDatasourceAdmin, FeedbackAdmin, ActivityLogAdmin,
+         AccessLogAdmin, AuditLogAdmin, AiUsageAdmin, NoticeLogAdmin, HistoryAdmin]
+
+
+def _drs_shell(request: Request) -> dict:
+    """The portal's frame for an admin page (set by DrsAdminAuth.authenticate; built here for a page without it)."""
+    shell = getattr(request.state, "drs_shell", None)
+    if shell is None:
+        shell = request.state.drs_shell = shell_context(request)
+    return shell
+
+
+def _share_portal_frame(admin: Admin) -> None:
+    """Lets the admin templates draw the portal's frame: the portal's templates (``_shell.html``) after the admin's
+    own, and ``drs_shell(request)``."""
+    env = admin.templates.env
+    env.loader = ChoiceLoader([env.loader, FileSystemLoader(str(PORTAL_TEMPLATES))])
+    env.globals["drs_shell"] = _drs_shell
 
 
 def mount(app, database: Database, settings: AppSettings, secret: str) -> Admin:
@@ -798,6 +901,7 @@ def mount(app, database: Database, settings: AppSettings, secret: str) -> Admin:
         i18n_config=I18nConfig(default_locale=settings.app.default_locale, language_cookie_name="drs_locale",
                                language_header_name=None),
     )
+    _share_portal_frame(admin)
     for view in VIEWS:
         view.database = database
         view.settings = settings

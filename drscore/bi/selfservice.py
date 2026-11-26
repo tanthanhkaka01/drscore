@@ -17,6 +17,7 @@ import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from drscore import siteurl
 from drscore.audit import audit
 from drscore.authz.design import DesignRights, can_edit_report, design_rights, param_datasource_ids
 from drscore.bi import dataset as bi_dataset
@@ -56,10 +57,6 @@ def _app(settings: AppSettings | Settings) -> AppSettings:
 
 def _superset_cfg(settings: AppSettings | Settings) -> SupersetSection:
     return _app(settings).bi.superset
-
-
-def _base_url(settings: AppSettings | Settings) -> str:
-    return _app(settings).app.base_url
 
 
 def table_name(session: Session, report_code: str, report_id: int | None = None) -> str:
@@ -589,6 +586,39 @@ def sync_group(database: Database, settings: AppSettings | Settings, group_code:
         return outcomes
 
 
+def sync_embedding(database: Database, settings: AppSettings | Settings, report_codes: list[str] | None = None
+                   ) -> list[str]:
+    """Lets every address of the portal (``siteurl.portal_origins``) frame the dashboards attached
+    to reports (``bi_design_uri = superset:<uuid>``): Superset refuses to be embedded by a page whose
+    address is not in the dashboard's allowed domains. Run after ``[app] other_urls`` changes."""
+    settings = _app(settings)
+    origins = siteurl.portal_origins(settings)
+    with database.session() as s:
+        query = select(Report.report_code, Report.bi_design_uri).where(Report.bi_design_uri.like("superset:%"))
+        if report_codes is not None:
+            query = query.where(Report.report_code.in_(report_codes))
+        linked = list(s.execute(query.order_by(Report.report_code)))
+    if not linked:
+        return []
+    client = admin_client(_superset_cfg(settings))
+    outcomes = []
+    for code, uri in linked:
+        uuid = uri.split(":", 1)[1]
+        dashboard_id = client.embedded_dashboard_id(uuid)
+        if dashboard_id is None:
+            outcomes.append(f"{code}: embedded dashboard {uuid} not found in Superset")
+            continue
+        new_uuid = client.enable_embedding(dashboard_id, origins)
+        if new_uuid != uuid:  # Superset keeps the uuid on an update; follow it if it ever does not
+            with database.session() as s:
+                report = s.scalars(select(Report).where(Report.report_code == code)).one()
+                report.bi_design_uri = f"superset:{new_uuid}"
+                audit(s, "drs", "BI_LINK", "drs_report", code, before={"bi_design_uri": uri},
+                      after={"bi_design_uri": report.bi_design_uri})
+        outcomes.append(f"{code}: dashboard {dashboard_id} may be embedded by {', '.join(origins)}")
+    return outcomes
+
+
 def schedule_sync(report_id: int) -> None:
     """Schedules sync_report in a daemon thread, or inline if INLINE=True."""
     if INLINE:
@@ -686,7 +716,7 @@ def _catalog(s: Session, database: Database, client: SupersetAdmin, cfg: Superse
                            "report": r.report_code if r else None, "dataset": c["dataset_name"],
                            "this": r is not None and r.report_id == report.report_id,
                            "mine": me is not None and me in c["owner_ids"],
-                           "url": f"{cfg.base_url}/explore/?slice_id={c['id']}"})
+                           "url": f"{siteurl.superset_url(cfg)}/explore/?slice_id={c['id']}"})
     except DRSError as exc:
         return {"me": None, "account": account, "datasets": [], "charts": [], "error": exc.message,
                 "error_detail": exc.admin_detail}
@@ -745,7 +775,7 @@ def report_dashboards(database: Database, settings: AppSettings | Settings, repo
 
         dataset_id = ds["id"]
         info["dataset_id"] = dataset_id
-        info["explore_url"] = f"{cfg.base_url}/explore/?datasource_type=table&datasource_id={dataset_id}"
+        info["explore_url"] = f"{siteurl.superset_url(cfg)}/explore/?datasource_type=table&datasource_id={dataset_id}"
         dash_items = client.dashboards_of_dataset(dataset_id)
         dashboards = []
         for d in dash_items:
@@ -764,7 +794,7 @@ def report_dashboards(database: Database, settings: AppSettings | Settings, repo
                 "reason": reason,
                 # The other reports whose datasets it reads: they run with the report's form.
                 "members": [r.report_code for r in fed.values() if r.report_id != report.report_id],
-                "url": f"{cfg.base_url}/superset/dashboard/{did}/",
+                "url": f"{siteurl.superset_url(cfg)}/superset/dashboard/{did}/",
             }
             if owners_known:
                 item["mine"] = me is not None and me in client.dashboard_owner_ids(did)
@@ -825,10 +855,8 @@ def link_dashboard(
             raise DRSError("DRAFT_INVALID", detail={"reason": "member_forbidden"})
         fed = {dataset_id: report} | {i: r for i, r in fed.items() if r.report_id != report.report_id}
 
-        base_url = _base_url(settings)
-        parts = urllib.parse.urlsplit(base_url)
-        origin = f"{parts.scheme}://{parts.netloc}"
-        uuid = client.enable_embedding(dashboard_id, [origin])
+        # Every address of the portal may frame it (Superset checks the page that embeds it).
+        uuid = client.enable_embedding(dashboard_id, siteurl.portal_origins(settings))
 
         before_uri = report.bi_design_uri
         report.bi_design_uri = f"superset:{uuid}"
@@ -976,12 +1004,12 @@ def superset_urls(
             db_id = client.database_id(cfg.database_name)
             ds = client.find_dataset(db_id, schema, table)
             if ds is not None:
-                explore_url = f"{cfg.base_url}/explore/?datasource_type=table&datasource_id={ds['id']}"
+                explore_url = f"{siteurl.superset_url(cfg)}/explore/?datasource_type=table&datasource_id={ds['id']}"
 
     if bi_uri and bi_uri.startswith("superset:"):
         uuid = bi_uri.split(":", 1)[1]
         dash_id = client.embedded_dashboard_id(uuid)
         if dash_id is not None:
-            dashboard_url = f"{cfg.base_url}/superset/dashboard/{dash_id}/"
+            dashboard_url = f"{siteurl.superset_url(cfg)}/superset/dashboard/{dash_id}/"
 
     return {"explore": explore_url, "dashboard": dashboard_url}

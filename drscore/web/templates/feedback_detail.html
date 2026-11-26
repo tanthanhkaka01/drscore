@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ t('feedback.title') }} #{{ item.feedback_id }}{% endblock %}
+{% block header %}
+<div class="page-pretitle"><a href="/feedback">{{ t('feedback.title') }}</a></div>
+<h2 class="page-title">#{{ item.feedback_id }} · {{ t('feedback.kind_' ~ item.kind) }}</h2>
+{% endblock %}
+{% block content %}
+{% if msg %}<div class="alert alert-success" role="alert">{{ t('feedback.msg_' ~ msg) }}</div>{% endif %}
+<div class="row row-cards">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-secondary small mb-2">
+          {{ item.username }} · {{ item.created_at.astimezone(tz).strftime('%d/%m/%Y %H:%M') }}
+          · {{ t('feedback.urgency_' ~ item.urgency) }}
+          {% if item.page_path %} · <a href="{{ item.page_path }}">{{ item.page_path }}</a>{% endif %}
+          {% if item.app_version %} · {{ t('feedback.version') }} {{ item.app_version }}{% endif %}
+        </div>
+        <div style="white-space: pre-wrap">{{ item.message }}</div>
+        {% if files %}
+        <div class="mt-3 d-flex flex-wrap gap-2">
+          {% for f in files %}
+          {% if f.inline %}
+          <a href="/feedback/{{ item.feedback_id }}/files/{{ f.id }}" target="_blank" rel="noopener">
+            <img src="/feedback/{{ item.feedback_id }}/files/{{ f.id }}" alt="{{ f.name }}" class="rounded border" style="max-height: 160px; max-width: 100%">
+          </a>
+          {% else %}
+          <a class="btn btn-sm" href="/feedback/{{ item.feedback_id }}/files/{{ f.id }}"><i class="ti ti-paperclip me-1"></i>{{ f.name }} ({{ (f.size / 1024) | round(0) | int }} KB)</a>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><h3 class="card-title">{{ t('feedback.thread') }}</h3></div>
+      <div class="list-group list-group-flush">
+        {% for c in comments %}
+        <div class="list-group-item">
+          <div class="small text-secondary mb-1">
+            {% if c.kind == 'ai' %}<i class="ti ti-sparkles me-1"></i>{% elif c.kind == 'admin' %}<i class="ti ti-shield me-1"></i>{% endif %}
+            <strong>{{ c.username }}</strong> · {{ c.created_at.astimezone(tz).strftime('%d/%m/%Y %H:%M') }}
+          </div>
+          <div style="white-space: pre-wrap">{{ c.message }}</div>
+        </div>
+        {% else %}
+        <div class="list-group-item text-secondary">{{ t('feedback.no_answer') }}</div>
+        {% endfor %}
+      </div>
+      <div class="card-body">
+        <form method="post" action="/feedback/{{ item.feedback_id }}/comments">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <textarea class="form-control mb-2" name="message" rows="3" required maxlength="8000"
+                    placeholder="{{ t('feedback.answer_hint') }}"></textarea>
+          <button class="btn btn-primary" type="submit"><i class="ti ti-send me-1"></i>{{ t('feedback.answer') }}</button>
+          {% if is_sender and item.status in ('done', 'wontfix') %}<small class="form-hint d-inline ms-2">{{ t('feedback.reopen_hint') }}</small>{% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">{{ t('feedback.status') }}</h3></div>
+      <div class="card-body">
+        <p class="mb-2"><strong>{{ t('feedback.status_' ~ item.status) }}</strong>
+          {% if item.done_version %} · {{ t('feedback.done_in', v=item.done_version) }}{% endif %}</p>
+        {% if item.handled_by %}<p class="text-secondary small">{{ t('feedback.handled_by', who=item.handled_by) }}</p>{% endif %}
+        {% if item.checked_at %}<p class="text-green small"><i class="ti ti-check me-1"></i>{{ t('feedback.checked_at', at=item.checked_at.astimezone(tz).strftime('%d/%m/%Y %H:%M')) }}</p>{% endif %}
+        {% if is_sender and item.status == 'done' %}
+        <form method="post" action="/feedback/{{ item.feedback_id }}/checked" class="mb-2">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <input type="hidden" name="checked" value="{{ '0' if item.checked_at else '1' }}">
+          <button class="btn btn-sm {{ 'btn-outline-secondary' if item.checked_at else 'btn-success' }}" type="submit">
+            {{ t('feedback.uncheck') if item.checked_at else t('feedback.check') }}</button>
+        </form>
+        {% endif %}
+        {% if is_admin %}
+        <form method="post" action="/feedback/{{ item.feedback_id }}">
+          <input type="hidden" name="csrf_token" value="{{ auth.csrf_token }}">
+          <label class="form-label" for="st">{{ t('feedback.set_status') }}</label>
+          <select class="form-select mb-2" id="st" name="status">
+            {% for st in statuses %}<option value="{{ st }}" {% if item.status == st %}selected{% endif %}>{{ t('feedback.status_' ~ st) }}</option>{% endfor %}
+          </select>
+          <div class="row g-2 mb-2">
+            <div class="col-6"><select class="form-select" name="kind" aria-label="{{ t('feedback.kind') }}">
+              {% for k in kinds %}<option value="{{ k }}" {% if item.kind == k %}selected{% endif %}>{{ t('feedback.kind_' ~ k) }}</option>{% endfor %}
+            </select></div>
+            <div class="col-6"><select class="form-select" name="urgency" aria-label="{{ t('feedback.urgency') }}">
+              {% for u in urgencies %}<option value="{{ u }}" {% if item.urgency == u %}selected{% endif %}>{{ t('feedback.urgency_' ~ u) }}</option>{% endfor %}
+            </select></div>
+          </div>
+          <input class="form-control mb-2" name="done_version" value="{{ item.done_version or '' }}" maxlength="20"
+                 placeholder="{{ t('feedback.done_version') }}">
+          <button class="btn btn-primary w-100" type="submit">{{ t('feedback.save') }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% if is_admin and item.ai_note %}
+    <div class="card mt-3">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-sparkles me-2"></i>{{ t('feedback.ai_note', name=ai_name) }}</h3></div>
+      <div class="card-body" style="white-space: pre-wrap">{{ item.ai_note }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

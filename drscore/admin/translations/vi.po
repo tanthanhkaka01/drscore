@@ -369,6 +369,16 @@ msgstr "Cách truyền nhiều giá trị"
 msgid "Must change password"
 msgstr "Phải đổi mật khẩu"
 
+msgid "Session days"
+msgstr "Số ngày giữ đăng nhập"
+
+msgid ""
+"Days one sign-in lasts, used or not, the browser closed or not (1-366), from the next sign-in. "
+"Empty: the session limits of app.toml."
+msgstr ""
+"Số ngày một lần đăng nhập còn hiệu lực, dù có dùng hay không, dù tắt trình duyệt (1-366), áp dụng từ lần "
+"đăng nhập sau. Để trống: theo giới hạn phiên trong app.toml."
+
 msgid "Name"
 msgstr "Tên"
 
@@ -594,3 +604,84 @@ msgid ""
 msgstr ""
 "Tài khoản của người dùng trong Superset, khi họ đăng nhập Superset bằng tên khác. "
 "Để trống: tài khoản Superset trùng tên với user DRS."
+
+msgid "Activity log"
+msgstr "Nhật ký thao tác"
+
+msgid "Outcome"
+msgstr "Kết quả"
+
+msgid "HTTP status"
+msgstr "Mã HTTP"
+
+msgid "Method"
+msgstr "Phương thức"
+
+msgid "Address"
+msgstr "Địa chỉ"
+
+msgid "Query"
+msgstr "Tham số địa chỉ"
+
+msgid "Sent"
+msgstr "Đã gửi"
+
+msgid "Feedback"
+msgstr "Góp ý"
+
+msgid "Number"
+msgstr "Số"
+
+msgid "Kind"
+msgstr "Loại"
+
+msgid "Urgency"
+msgstr "Mức độ"
+
+msgid "Message"
+msgstr "Nội dung"
+
+msgid "Handled by"
+msgstr "Người xử lý"
+
+msgid "AI note"
+msgstr "Ghi chú AI"
+
+msgid "AI agent questions"
+msgstr "Câu hỏi trợ lý AI"
+
+msgid "Purpose"
+msgstr "Mục đích"
+
+msgid "Question"
+msgstr "Câu hỏi"
+
+msgid "Answer"
+msgstr "Trả lời"
+
+msgid "Model"
+msgstr "Model"
+
+msgid "Input tokens"
+msgstr "Token vào"
+
+msgid "Output tokens"
+msgstr "Token ra"
+
+msgid "Cost (USD)"
+msgstr "Chi phí (USD)"
+
+msgid "Tools run"
+msgstr "Công cụ đã chạy"
+
+msgid "Notices sent"
+msgstr "Thông báo đã gửi"
+
+msgid "Channel"
+msgstr "Kênh"
+
+msgid "Event"
+msgstr "Sự kiện"
+
+msgid "Text"
+msgstr "Nội dung"

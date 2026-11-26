@@ -26,7 +26,7 @@
   <div class="col-md-6 col-xl-4" data-group>
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title"><i class="ti ti-{{ g.icon or 'folder' }} me-2 text-primary"></i>{{ g.name }}</h3>
+        <h3 class="card-title d-flex align-items-center gap-2"><span class="sk-tile" data-sk-color="{{ group_colors[g.code] }}"><i class="ti ti-{{ g.icon or 'folder' }}"></i></span>{{ g.name }}</h3>
         <div class="card-actions"><span class="badge bg-secondary-lt">{{ t('home.reports_count', n=g.reports | length) }}</span></div>
       </div>
       <div class="list-group list-group-flush">

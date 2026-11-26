@@ -1,0 +1,53 @@
+{# DRS override of sqladmin 0.32.0's base.html: the page takes the portal's frame and look (the site kit, as the
+   portal's pages: drscore/web/templates/_shell.html). Changed from sqladmin's: the language and data-sk-app on
+   <html>; the kit's stylesheets and Tabler 1.6.1 in place of sqladmin's Tabler, and the kit's Bootstrap bundle in
+   place of its tabler.min.js; sqladmin's Font Awesome, Select2, Flatpickr and main.css / main.js kept.
+
+   The rest is sqladmin's own template: Copyright (c) 2022, Amin Alaee, BSD-3-Clause.
+   Its licence is the file LICENSE.sqladmin beside this one and must stay with it. #}
+{% import "_shell.html" as shell %}
+<!DOCTYPE html>
+<html lang="{{ drs_shell(request).locale }}" data-sk-app="drs">
+
+<head>
+  {% block head_meta %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5">
+  {% endblock %}
+  {% block head_css %}
+  {{ shell.head(drs_shell(request)) }}
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/fontawesome-all.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/select2.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/flatpickr.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('admin:statics', path='css/main.css') }}">
+  <link rel="stylesheet" href="{{ drs_shell(request).static('css/drs.css') }}">
+  <link rel="stylesheet" href="{{ drs_shell(request).static('css/drs-admin.css') }}">
+  {% endblock %}
+  <link rel="icon" href="data:,">
+  <title>{% if model_view is defined %}{{ model_view.name_plural }} · {% endif %}{{ admin.title }}</title>
+  {% block head %}
+  {% endblock %}
+  {% block head_tail %}
+  {% endblock %}
+</head>
+
+<body>
+  {% block body %}
+  <main>
+    {% block main %}
+    {% endblock %}
+  </main>
+  {% endblock %}
+  {% block tail_js %}
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/jquery.min.js') }}"></script>
+  <script type="text/javascript" src="{{ drs_shell(request).static('kit/bs/bootstrap.bundle.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/select2.full.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/flatpickr.min.js') }}"></script>
+  <script type="text/javascript" src="{{ url_for('admin:statics', path='js/main.js') }}"></script>
+  {% endblock %}
+  {% block tail %}
+  {% endblock %}
+</body>
+
+</html>

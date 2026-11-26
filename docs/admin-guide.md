@@ -224,6 +224,16 @@ SELECT logged_at, username, action, report_code, view_key, status, row_count, pa
 FROM drs_access_log WHERE report_code = 'SALARY_LIST' ORDER BY logged_at DESC;
 ```
 
+Since 1.7.0 the **activity log** (Admin -> Logs -> *Activity log*, table `drs_activity_log`) has every
+request a user makes besides: every change and what was sent (secrets masked), every page opened, every
+refused or failed request. Feedback, Typhon's questions and the Telegram / Zalo notices have their own log
+pages: `docs/feedback-typhon-notices.md`.
+
+```sql
+SELECT logged_at, username, action, object_key, outcome, status_code, path, detail_json
+FROM drs_activity_log WHERE username = 'hr_aaa' ORDER BY logged_at DESC;
+```
+
 ## Cache and retention
 
 `drs_report.cache_ttl_seconds` is the retention of a report's result. While it is valid every

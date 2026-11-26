@@ -8,6 +8,8 @@
   var def = page.definition;
   var msg = page.messages;
   var code = def.report.code;
+  // Where the page's calls go: the portal's JSON API, or a public link's own (/p/<token>/api).
+  var base = page.api_base || ("/api/reports/" + encodeURIComponent(code));
   var csrf = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
   var form = document.getElementById("param-form");
   var views = {};
@@ -117,8 +119,26 @@
 
   function setExports() {
     document.querySelectorAll("[data-export]").forEach(function (a) {
-      enableLink(a, "/api/reports/" + encodeURIComponent(code) + "/export?format=" + a.getAttribute("data-export") +
-        "&snapshot_id=" + snapshotId);
+      var fmt = a.getAttribute("data-export");
+      if (page.export_base) {
+        // A public link names no snapshot: the file is made from the same run, by its parameters.
+        var query = new URLSearchParams({ format: fmt });
+        Object.keys(ranWith || {}).forEach(function (k) {
+          [].concat(ranWith[k]).forEach(function (v) { query.append(k, v); });
+        });
+        enableLink(a, page.export_base + "?" + query.toString());
+      } else {
+        enableLink(a, base + "/export?format=" + fmt + "&snapshot_id=" + snapshotId);
+      }
+      a.setAttribute("data-href", a.href);
+      if (!a.hasAttribute("data-cols-hook")) {
+        // The file follows the grid as arranged now: its visible columns, in their order on screen.
+        a.setAttribute("data-cols-hook", "1");
+        a.addEventListener("click", function () {
+          var cols = exportColumns();
+          a.href = a.getAttribute("data-href") + (cols ? "&cols=" + encodeURIComponent(cols) : "");
+        });
+      }
     });
   }
 
@@ -159,6 +179,7 @@
         sorter: numeric[c.type] ? "number" : "string",
       };
       if (c.width) col.width = c.width;
+      col.headerMenu = columnMenu;
       if (c.filterable) { col.headerFilter = "input"; col.headerFilterPlaceholder = t("grid.filter"); }
       if (c.footer) {
         col.bottomCalc = c.footer;
@@ -175,10 +196,17 @@
       return o;
     });
     if (grid) grid.destroy();
+    lastAnswer = answer;
     grid = new Tabulator("#grid", {
       data: data,
       columns: columns,
       layout: "fitDataStretch",
+      // The reader arranges the columns - drag a header to move it, hide / show, pin to the left - and the
+      // browser keeps it, with the sort and the page size, per report and per set of columns: a report
+      // whose columns change starts again from its own layout.
+      movableColumns: true,
+      persistence: { columns: ["width", "visible", "frozen"], sort: true, page: { size: true, page: false } },
+      persistenceID: layoutId(answer),
       height: "calc(100vh - 400px)",
       pagination: true,
       paginationSize: 50,
@@ -206,6 +234,108 @@
     var print = el("grid-print");
     if (print) print.disabled = false;
   }
+
+  // ---------------------------------------------------------------- the reader's column layout
+
+  var lastAnswer = null;   // the run the grid shows: "Default layout" builds it again
+
+  function layoutId(answer) {
+    var names = answer.columns.map(function (c) { return c.name; }).join("|");
+    var hash = 0;
+    for (var i = 0; i < names.length; i++) hash = (hash * 31 + names.charCodeAt(i)) | 0;
+    return "drs-" + code + "-" + (hash >>> 0).toString(36);
+  }
+
+  function shownColumns() { return grid ? grid.getColumns().filter(function (col) { return col.isVisible(); }) : []; }
+
+  // The visible columns in their order on screen, as positions in the run's columns: what an export writes.
+  function exportColumns() {
+    if (!grid || !gridBuilt) return null;
+    return shownColumns().map(function (col) { return col.getField().substr(1); }).join(",");
+  }
+
+  function lastFrozen(except) {
+    var frozen = grid.getColumns().filter(function (col) {
+      return col !== except && col.getDefinition().frozen && col.isVisible();
+    });
+    return frozen.length ? frozen[frozen.length - 1] : null;
+  }
+
+  function pin(column, on) {
+    if (on) {  // pinned columns stay at the left edge: moved after the ones already pinned
+      var after = lastFrozen(column);
+      var first = grid.getColumns()[0];
+      if (after) column.move(after, true);
+      else if (first !== column) column.move(first, false);
+    }
+    column.updateDefinition({ frozen: on });
+  }
+
+  function columnMenu(e, column) {
+    var pinned = !!column.getDefinition().frozen;
+    return [
+      { label: '<i class="ti ti-eye-off me-2"></i>' + escapeHtml(t("grid.hide_column")),
+        disabled: shownColumns().length < 2, action: function () { column.hide(); } },
+      { label: '<i class="ti ti-pin me-2"></i>' + escapeHtml(t(pinned ? "grid.unpin_column" : "grid.pin_column")),
+        action: function () { pin(column, !pinned); } },
+      { separator: true },
+      { label: '<i class="ti ti-columns me-2"></i>' + escapeHtml(t("grid.columns")),
+        action: function () { openColumnList(); } },
+    ];
+  }
+
+  function fillColumnList() {
+    var list = el("grid-columns-list");
+    if (!list || !grid) return;
+    list.textContent = "";
+    grid.getColumns().forEach(function (col) {
+      var label = document.createElement("label");
+      label.className = "dropdown-item form-check m-0";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "form-check-input m-0 me-2";
+      box.checked = col.isVisible();
+      box.addEventListener("change", function () {
+        if (!box.checked && shownColumns().length < 2) { box.checked = true; return; }  // one column stays
+        if (box.checked) col.show(); else col.hide();
+      });
+      var text = document.createElement("span");
+      text.className = "form-check-label";
+      text.textContent = col.getDefinition().title;
+      label.appendChild(box);
+      label.appendChild(text);
+      if (col.getDefinition().frozen) {
+        var mark = document.createElement("i");
+        mark.className = "ti ti-pin ms-2 text-secondary";
+        mark.title = t("grid.pinned");
+        label.appendChild(mark);
+      }
+      list.appendChild(label);
+    });
+  }
+
+  function openColumnList() {
+    var toggle = el("grid-columns-toggle");
+    if (!toggle) return;
+    setTimeout(function () {  // after the header menu has closed
+      if (window.bootstrap && window.bootstrap.Dropdown) window.bootstrap.Dropdown.getOrCreateInstance(toggle).show();
+      else toggle.click();
+    }, 0);
+  }
+
+  function resetLayout() {
+    if (!lastAnswer) return;
+    var id = "tabulator-" + layoutId(lastAnswer);
+    ["columns", "sort", "page"].forEach(function (kind) {
+      try { window.localStorage.removeItem(id + "-" + kind); } catch (e) { /* no storage: nothing was kept */ }
+    });
+    renderGrid(lastAnswer);
+  }
+
+  var columnsToggle = el("grid-columns-toggle");
+  if (columnsToggle) columnsToggle.addEventListener("show.bs.dropdown", fillColumnList);
+  var columnsReset = el("grid-columns-reset");
+  if (columnsReset) columnsReset.addEventListener("click", resetLayout);
 
   function showHtml() {
     var url = "/reports/" + encodeURIComponent(code) + "/html?snapshot_id=" + snapshotId;
@@ -267,7 +397,7 @@
     if (!readsMembers()) { embed(mount, state, follows ? shown : null, null); return; }
     clearFieldErrors();
     setBusy(true);
-    api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-members",
+    api("POST", base + "/bi-members",
         { params: ranWith || {}, refresh: ranRefresh }).then(function (r) {
       setBusy(false);
       if (!r || biOf !== state) return;
@@ -285,7 +415,7 @@
       supersetDomain: mount.getAttribute("data-superset"),
       mountPoint: mount,
       fetchGuestToken: function () {
-        return api("POST", "/api/reports/" + encodeURIComponent(code) + "/bi-token",
+        return api("POST", base + "/bi-token",
                    { snapshot_id: snapshot, members: members }).then(function (r) {
           if (!r || !r.ok) {
             var error = (r && r.body.error) || { code: "BI_ENGINE_UNAVAILABLE", message: t("error.BI_ENGINE_UNAVAILABLE") };
@@ -315,7 +445,7 @@
     if (!snapshotId || !usable(current)) return;
     if (current === "html") showHtml();
     if (current === "grid" && gridOf !== snapshotId) {
-      api("GET", "/api/reports/" + encodeURIComponent(code) + "/grid?snapshot_id=" + snapshotId).then(function (r) {
+      api("GET", base + "/grid?snapshot_id=" + snapshotId).then(function (r) {
         if (r && r.ok) renderGrid(r.body);
         else if (r) showError(r.body.error || { code: "ERROR" });
       }).catch(function (error) { showError(clientFailure(error)); });
@@ -367,7 +497,7 @@
     clearFieldErrors();
     setBusy(true);
     var params = collectParams();
-    api("POST", "/api/reports/" + encodeURIComponent(code) + "/run",
+    api("POST", base + "/run",
         { params: params, refresh: !!refresh, view: view })
       .then(function (result) {
         setBusy(false);

@@ -65,7 +65,7 @@ async def login(request: Request, session: Session = Depends(db_session)) -> Res
                                  "must_change_password": user.must_change_password})
     response.set_cookie(
         SESSION_COOKIE, token, httponly=True, samesite="lax", secure=settings.session.cookie_secure,
-        max_age=settings.session.absolute_hours * 3600, path="/",
+        max_age=int(auth.session_lifetime(user, settings)[1].total_seconds()), path="/",
     )
     return response
 

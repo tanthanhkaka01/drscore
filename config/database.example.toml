@@ -15,6 +15,8 @@ path = "runtime/drs.sqlite3"
 # The BI datasets (reports with a "BI dataset table"), in a file and a folder of their own: the only
 # thing a BI tool such as Superset is given to read - never the DRS database above.
 bi_path = "runtime/bi/datasets.sqlite3"
+# The mirrored source tables ([mirror] in app.toml), read by reports through a sqlite datasource.
+mirror_path = "runtime/mirror/mirror.sqlite3"
 
 [postgresql]
 host = "127.0.0.1"
@@ -26,6 +28,8 @@ password_env = "DRS_DB_PASSWORD"
 # Schema of the DRS tables, and schema of the tables Superset reads.
 schema = "drs"
 bi_schema = "drs_bi"
+# Schema of the mirrored source tables ([mirror] in app.toml).
+mirror_schema = "drs_mirror"
 sslmode = "prefer"
 pool_size = 5
 max_overflow = 5

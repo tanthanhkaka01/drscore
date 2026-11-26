@@ -1,4 +1,4 @@
-/* Small adjustments on top of Tabler; no component of its own. */
+/* Small adjustments on top of the kit (static/kit/, kit 1.7.0: Tabler dressed by kit-bs.css); no component of its own. */
 
 /* The grid scrolls inside its own area, never the page (1366 x 768 and up). */
 .drs-grid { min-height: 300px; }
@@ -18,3 +18,27 @@
 .drs-drop { min-height: 3rem; border: 1px dashed var(--tblr-border-color); border-radius: var(--tblr-border-radius); }
 .drs-drop.drs-over { border-color: var(--tblr-primary); background: var(--tblr-primary-lt); }
 .drs-dragging { opacity: .4; }
+
+/* A report opened by a public link (public.html): the whole window, a thin bar above. */
+.drs-public { min-height: 100vh; display: flex; flex-direction: column; background: var(--tblr-body-bg); }
+.drs-public-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; padding: .5rem 1rem;
+  border-bottom: 1px solid var(--tblr-border-color); }
+.drs-public-title { font-size: 1.15rem; font-weight: 600; }
+.drs-public-form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.drs-public-field { display: flex; align-items: center; gap: .35rem; margin: 0; font-size: .85rem; }
+.drs-public-field .form-select, .drs-public-field .form-control { width: auto; min-width: 7rem; }
+.drs-public-meta { margin-left: auto; font-size: .8rem; color: var(--tblr-secondary); display: flex; gap: .35rem; }
+.drs-public-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.drs-public-frame { flex: 1; width: 100%; min-height: calc(100vh - 3.5rem); border: 0; }
+.drs-public-frame iframe { width: 100%; height: 100%; min-height: calc(100vh - 3.5rem); border: 0; }
+.drs-public-wait { padding: 2rem; color: var(--tblr-secondary); }
+/* An HTML design fills the window and scrolls inside its frame; a fresh copy loads hidden behind it. */
+.drs-public-html { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.drs-public-stage { position: relative; flex: 1; min-height: 0; }
+.drs-public-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.drs-public-stage iframe.drs-public-next { visibility: hidden; }
+.drs-public-grid { overflow: auto; padding: .5rem 1rem; }
+
+/* The sign-in page: the kit's tile and the app's name above the card. */
+.drs-login { background: var(--k-bg-alt); }
+.drs-login-name { font: 700 1.5rem/1.2 var(--k-font-display); color: var(--k-ink); }

@@ -1,0 +1,92 @@
+<!doctype html>
+{# A report opened by a public link (drscore.publiclink): no menu, no session, no form but the
+   parameters the link lets a reader change. Dark by default ([public] theme): a wall screen. #}
+<html lang="{{ locale }}" data-theme="{{ theme }}" data-theme-lock="{{ theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="data:,">
+  <title>{{ title or t('public.not_found_title') }} · {{ app_name }}</title>
+  <link rel="stylesheet" href="{{ static('kit/kit.css') }}">
+  <link rel="stylesheet" href="{{ static('kit/bs/tabler.min.css') }}">
+  <link rel="stylesheet" href="{{ static('kit/bs/kit-bs.css') }}">
+  <script src="{{ static('kit/kit.js') }}"></script>
+  <link rel="stylesheet" href="{{ static('css/drs.css') }}">
+</head>
+<body class="drs-public{% if page and page.html %} drs-public-html{% endif %}">
+{% if missing %}
+  <div class="page page-center" data-drs-error="NOT_FOUND">
+    <div class="container container-tight py-6 text-center">
+      <h1 class="h2 mb-2">{{ t('public.not_found_title') }}</h1>
+      <p class="text-secondary">{{ t('public.not_found') }}</p>
+    </div>
+  </div>
+{% else %}
+  {# An HTML design shows its own title, filters and time: the bar only carries a form to change. #}
+  {% if not page.html or page.editable %}
+  <header class="drs-public-bar">
+    <div class="drs-public-title">{{ page.name }}</div>
+    {% if page.editable %}
+    <form class="drs-public-form" method="get">
+      {% for p in page.editable %}
+      <label class="drs-public-field">
+        <span>{{ p.label }}</span>
+        {% if p.options %}
+        <select class="form-select form-select-sm" name="{{ p.name }}">
+          {% for o in p.options %}<option value="{{ o }}" {% if o == p.value|string %}selected{% endif %}>{{ o }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <input class="form-control form-control-sm" name="{{ p.name }}" value="{{ p.value }}"
+               type="{{ {'date': 'date', 'int': 'number', 'decimal': 'number'}.get(p.type, 'text') }}"{% if p.type == 'decimal' %} step="any"{% endif %}>
+        {% endif %}
+      </label>
+      {% endfor %}
+      <button class="btn btn-sm btn-primary" type="submit">{{ t('public.apply') }}</button>
+    </form>
+    {% endif %}
+    <div class="drs-public-meta">
+      {% if page.as_of %}<span>{{ t('report.data_as_of', time=page.as_of) }}</span>{% endif %}
+      {% if page.refresh %}<span>· {{ t('public.refresh_every', minutes=('%g' | format(page.refresh / 60))) }}</span>{% endif %}
+    </div>
+  </header>
+  {% endif %}
+  <main class="drs-public-body" id="public" data-refresh="{{ page.refresh or '' }}"{% if page.error %} data-drs-error="{{ page.error.code }}"{% endif %}>
+    {% if page.error %}
+    <div class="alert alert-danger m-3" role="alert">
+      <div class="fw-bold">{{ page.error.message }}</div>
+      {% if page.error.detail %}<ul class="mb-0 mt-1">{% for k, v in page.error.detail.items() %}<li>{{ k }}: {{ v }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% elif page.html %}
+    {# public.js puts the design in a frame, then refreshes it behind the one shown. #}
+    <div id="html-view" class="drs-public-stage" data-src="{{ page.html.src }}" data-fresh="{{ page.html.fresh }}"
+         data-current="{{ 1 if page.html.current else 0 }}">
+      <div class="drs-public-wait">{{ t('public.loading') }}</div>
+    </div>
+    {% elif page.bi and page.bi.mode == 'LINK' %}
+    <iframe class="drs-public-frame" title="{{ page.name }}" src="{{ page.bi.url }}" referrerpolicy="no-referrer"></iframe>
+    {% elif page.bi %}
+    <div id="bi-embed" class="drs-public-frame" data-dashboard="{{ page.bi.dashboard_id }}"
+         data-superset="{{ page.bi.superset_url }}" data-token="{{ page.bi.token_url }}"
+         data-failed="{{ t('public.dashboard_failed') }}">
+      <div class="drs-public-wait">{{ t('public.loading') }}</div>
+    </div>
+    {% elif page.grid %}
+    <div class="drs-public-grid">
+      <table class="table table-sm table-striped table-hover">
+        <thead><tr>{% for c in page.grid.columns %}<th class="text-{{ 'end' if c.align == 'right' else ('center' if c.align == 'center' else 'start') }}">{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in page.grid.rows %}
+          <tr>{% for v in row %}{% set c = page.grid.columns[loop.index0] %}<td class="text-{{ 'end' if c.align == 'right' else ('center' if c.align == 'center' else 'start') }}">{{ v | public_cell(c.type) }}</td>{% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if page.grid.cut %}<div class="text-secondary small p-2">{{ t('public.rows_cut', shown=page.grid.rows|length, total=page.grid.row_count) }}</div>{% endif %}
+    </div>
+    {% endif %}
+  </main>
+  {% if page.bi and page.bi.mode == 'EMBED' and not page.error %}<script src="{{ static('vendor/superset-embedded-sdk/embedded-sdk.min.js') }}"></script>{% endif %}
+  <script src="{{ static('js/public.js') }}"></script>
+{% endif %}
+</body>
+</html>

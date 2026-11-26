@@ -16,6 +16,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from drscore import siteurl
 from drscore.db.engine import Database
 from drscore.settings import ConfigError, Settings, resolve_path
 
@@ -70,6 +71,18 @@ def _default_admin(database: Database, settings: Settings) -> list[str]:
             f"password \"{DEFAULT_ADMIN}\". The first sign-in must change it."]
 
 
+def _public_user(database: Database, settings: Settings) -> list[str]:
+    from drscore.admin.service import ensure_public_user
+
+    try:
+        with database.session() as s:
+            created = ensure_public_user(s, "startup", settings.app)
+    except IntegrityError:  # another server starting at the same moment has just made it
+        return []
+    return [f"NOTE: user \"{created.username}\" was made for public links ([public] default_user): no password, "
+            f"no right until a link is made for a report."] if created else []
+
+
 def _warnings(database: Database, settings: Settings) -> list[str]:
     from drscore.db.models import User
 
@@ -87,7 +100,11 @@ def _warnings(database: Database, settings: Settings) -> list[str]:
             raise ConfigError(f"The environment variable {key_env} does not hold a valid key "
                               f"(`python -m drscore secret new-key` prints one).") from exc
     https = app.app.base_url.lower().startswith("https://")
-    if https and not app.session.cookie_secure:
+    some_http = any(u.startswith("http://") for u in siteurl.portal_origins(app))
+    if https and some_http and app.session.cookie_secure:
+        out.append("WARNING: [session] cookie_secure = true, but the portal also has an http address "
+                   "([app] other_urls): signing in there will not work.")
+    if https and not some_http and not app.session.cookie_secure:
         out.append("WARNING: base_url is https but [session] cookie_secure = false: set it to true.")
     if app.session.cookie_secure and not https:
         out.append("WARNING: [session] cookie_secure = true: the browser sends the session cookie over https only, "
@@ -100,6 +117,18 @@ def _warnings(database: Database, settings: Settings) -> list[str]:
             out.append("WARNING: [bi.superset] self_service = true but admin_username is empty.")
         if not os.environ.get(sup.admin_password_env):
             out.append(f"WARNING: [bi.superset] self_service = true but {sup.admin_password_env} is not set.")
+    if sup.enabled:
+        portals = siteurl.portal_origins(app)
+        for site in sup.site_urls:
+            if siteurl.origin_of(site) not in portals:
+                out.append(f"WARNING: [bi.superset] site_urls names {site}, which is not an address of the portal "
+                           f"([app] base_url / other_urls): it is never used.")
+        for portal in portals:
+            target = siteurl.superset_url(sup, portal)
+            if siteurl.mixed_content(portal, target):
+                out.append(f"WARNING: the portal is opened at {portal} but Superset at {target}: a browser shows no "
+                           f"http dashboard inside an https page. Give Superset an https address and add it to "
+                           f"[bi.superset] site_urls for {portal}.")
     with database.session() as s:
         admins = s.scalar(select(func.count()).select_from(User).where(User.is_admin, User.is_active))
     if not admins:
@@ -114,4 +143,5 @@ def preflight(database: Database, settings: Settings) -> list[str]:
     _connect(database)
     messages = _migrate(database, settings)
     messages += _default_admin(database, settings)
+    messages += _public_user(database, settings)
     return messages + _warnings(database, settings)

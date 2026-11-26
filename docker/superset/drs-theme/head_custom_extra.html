@@ -1,0 +1,6 @@
+{#
+  DRS: replaces Superset's empty head_custom_extra.html (superset/templates/, "may be overridden in your custom
+  deployment"; Apache-2.0). It loads the Manrope faces the theme's fontFamily names (superset_config.py): the theme's
+  own fontUrls token takes only Google / Adobe addresses, and DRS loads nothing from another host.
+#}
+<link rel="stylesheet" href="/static/assets/drs/fonts.css">

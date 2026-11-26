@@ -1,0 +1,327 @@
+/* Site kit 1.7.0 - kit-bs: the kit on app pages built with Bootstrap 5.3 / Tabler 1.x (README "Bootstrap and Tabler apps").
+   Load, in this order: ../kit.css, tabler.min.css, bootstrap-icons.min.css, kit-bs.css, then the app's own few rules;
+   ../kit.js and kit-bs.js in <head> (no defer), bootstrap.bundle.min.js at the end of <body>.
+   1. Tabler's tokens follow the kit's (type, colours light and dark, corners, shadows): every Bootstrap / Tabler
+      component takes the kit's look with no change to the page's markup.
+   2. The app frame for such pages (the "Shell Kit", sk- classes, from petweb 4.38.0 where it began): a side menu that
+      folds to its icons and is a drawer on narrow screens, a top bar, page head, filter bar, stat cards, tables usable
+      on a phone, floating buttons, "what's new". It looks like the kit's own .k-app frame.
+   Light and dark: the kit's [data-theme] on <html> (kit.js), which Tabler 1.6 reads as its own. */
+
+/* ---------- 1. Tabler's tokens from the kit's ---------- */
+:root, [data-theme], [data-bs-theme] {
+    --k-accent-rgb-light: 79, 70, 229;       /* --k-accent-light as r, g, b: Tabler's rgba() needs it; set both when */
+    --k-accent-rgb-dark: 139, 147, 255;      /* a page changes the accent */
+    --tblr-font-sans-serif: var(--k-font-sans);
+    --tblr-font-monospace: var(--k-font-mono);
+    --tblr-body-font-family: var(--k-font-sans);
+    --tblr-primary: var(--k-accent);
+    --tblr-primary-fg: var(--k-on-accent);
+    --tblr-primary-text-emphasis: var(--k-accent);
+    --tblr-link-color: var(--k-accent);
+    --tblr-link-hover-color: var(--k-ink);
+    --tblr-body-bg: var(--k-bg);
+    --tblr-body-color: var(--k-text);
+    --tblr-emphasis-color: var(--k-ink);
+    --tblr-heading-color: var(--k-ink);
+    --tblr-secondary: var(--k-muted);
+    --tblr-secondary-color: var(--k-muted);
+    --tblr-muted: var(--k-muted);
+    --tblr-bg-surface: var(--k-surface);
+    --tblr-bg-surface-primary: var(--k-surface);
+    --tblr-bg-surface-secondary: var(--k-surface-2);
+    --tblr-bg-surface-tertiary: var(--k-bg-alt);
+    --tblr-bg-forms: var(--k-surface);
+    --tblr-border-color: var(--k-line);
+    --tblr-border-color-translucent: var(--k-line);
+    --tblr-active-bg: color-mix(in srgb, var(--k-accent) 12%, var(--k-surface));
+    --tblr-border-radius: 8px;
+    --tblr-border-radius-sm: 6px;
+    --tblr-border-radius-lg: 12px;
+    --tblr-border-radius-xl: 16px;
+    --tblr-shadow-card: 0 1px 2px rgb(24 24 27 / .04), 0 1px 1px rgb(24 24 27 / .02);
+    --tblr-shadow-dropdown: var(--k-shadow-lg);
+    --tblr-shadow-input: none;
+}
+:root, [data-theme=light], [data-bs-theme=light] { --tblr-primary-rgb: var(--k-accent-rgb-light); }
+:root[data-theme=dark], [data-theme=dark], [data-bs-theme=dark] { --tblr-primary-rgb: var(--k-accent-rgb-dark); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]):not([data-theme-lock=light]) { --tblr-primary-rgb: var(--k-accent-rgb-dark); } }
+
+body { font-family: var(--k-font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .page-title, .card-title, .modal-title, .offcanvas-title { font-family: var(--k-font-display); letter-spacing: -.01em; }
+b, strong { color: inherit; }
+code { background: var(--k-surface-2); border: 1px solid var(--k-line); }
+
+/* Buttons: the kit's weight and corners; the primary follows the accent (Tabler's own mixes do the hover). */
+.btn { --tblr-btn-font-weight: 600; --tblr-btn-border-radius: 10px; letter-spacing: -.005em; }
+.btn-sm, .btn-group-sm > .btn { --tblr-btn-border-radius: 8px; }
+.btn-primary { --tblr-btn-variant: var(--k-accent); --tblr-btn-variant-fg: var(--k-on-accent); }
+
+/* Forms: a calm field, the accent around the one being typed in. */
+.form-control, .form-select { border-color: var(--k-line-strong); }
+.form-control:focus, .form-select:focus { border-color: var(--k-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-accent) 22%, transparent); }
+.form-check-input:checked { background-color: var(--k-accent); border-color: var(--k-accent); }
+.form-check-input:focus { border-color: var(--k-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-accent) 22%, transparent); }
+
+/* Cards, tables. */
+.card { --tblr-card-border-color: var(--k-line); --tblr-card-border-radius: 14px; --tblr-card-inner-border-radius: 13px; --tblr-card-cap-bg: var(--k-surface-2); }
+.table { --tblr-table-border-color: var(--k-line); }
+.table > thead { --tblr-table-bg: var(--k-surface-2); }
+.table > thead th { color: var(--k-muted); font-weight: 600; }
+
+/* Menus, dialogs, notes. */
+.dropdown-menu { --tblr-dropdown-border-radius: 12px; --tblr-dropdown-border-color: var(--k-line); --tblr-dropdown-padding-x: .375rem; --tblr-dropdown-padding-y: .375rem; --tblr-dropdown-link-active-bg: color-mix(in srgb, var(--k-accent) 14%, var(--k-surface)); --tblr-dropdown-link-active-color: var(--k-ink); box-shadow: var(--k-shadow-lg); }
+.dropdown-menu .dropdown-item { border-radius: 8px; }
+.modal { --tblr-modal-border-radius: 16px; --tblr-modal-inner-border-radius: 15px; --tblr-modal-border-color: var(--k-line); }
+.modal-content { box-shadow: var(--k-shadow-lg); }
+.modal-title { font-size: 1.05rem; font-weight: 700; color: var(--k-ink); }
+.offcanvas { --tblr-offcanvas-bg: var(--k-surface); --tblr-offcanvas-border-color: var(--k-line); }
+.toast { --tblr-toast-border-radius: 12px; box-shadow: var(--k-shadow-lg); }
+.alert { --tblr-alert-border-radius: 12px; }
+.badge { font-weight: 600; letter-spacing: 0; }
+.nav-tabs { --tblr-nav-tabs-link-active-color: var(--k-ink); --tblr-nav-tabs-link-active-border-color: var(--k-line) var(--k-line) var(--k-surface); }
+.avatar { --tblr-avatar-bg: color-mix(in srgb, var(--k-accent) 14%, var(--k-surface)); color: var(--k-accent); font-weight: 700; }
+
+/* ---------- 2. The app frame (Shell Kit) ---------- */
+:root {
+    --sk-sidebar-width: 16rem;          /* Tabler's own (--tblr-sidebar-width), folded to its icons by Tabler */
+    --sk-topbar-height: 3.5rem;         /* 56 px */
+    --sk-gutter: 1rem;                  /* page side padding: 16 px, 24 px from 768 px */
+    --sk-touch: 44px;                   /* the smallest thing a finger presses */
+    --sk-fab-offset: 1rem;
+}
+@media (min-width: 768px) { :root { --sk-gutter: 1.5rem; } }
+/* The sticky top bar never hides what the keyboard moves to (WCAG 2.4.11). */
+html { scroll-padding-top: calc(var(--sk-topbar-height) + .5rem); }
+
+/* The frame: .sk-shell (= Tabler's .page) holds the menu and .page-wrapper. The document scrolls and the top bar
+   stays on top. .sk-shell-fixed instead fills the window and lets each page scroll inside (sheet-like apps). */
+.sk-shell { min-height: 100vh; min-height: 100dvh; }
+.sk-shell-fixed { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.sk-shell-fixed > .page-wrapper { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.sk-shell > .page-wrapper { min-width: 0; }
+
+/* The menu: Tabler's vertical navbar dressed as the kit's .k-side (light in light mode, dark in dark mode). Groups are
+   dropdowns kept open (data-bs-auto-close="false"). */
+[data-sk-sidebar] {
+    --tblr-navbar-bg: var(--k-bg-alt);
+    --tblr-navbar-border-color: var(--k-line);
+    --tblr-navbar-color: var(--k-text);
+    --tblr-navbar-hover-color: var(--k-ink);
+    --tblr-navbar-active-color: var(--k-ink);
+    --tblr-navbar-active-bg: color-mix(in srgb, var(--k-accent) 13%, var(--k-surface));
+    --tblr-nav-link-icon-color: var(--k-muted);
+    --tblr-navbar-brand-color: var(--k-ink);
+    background: var(--k-bg-alt);
+    color: var(--k-text);
+}
+[data-sk-sidebar] .offcanvas-body { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+[data-sk-sidebar] .offcanvas-body > .navbar-nav { flex: 0 0 auto !important; margin-bottom: 0; padding: 0 .5rem; }
+[data-sk-sidebar] .navbar-brand { display: flex; width: 100%; justify-content: flex-start !important; gap: .6rem; font: 700 1rem/1.2 var(--k-font-display); color: var(--k-ink); }
+[data-sk-sidebar] .nav-link { margin: 1px 0; border-radius: 10px; font-weight: 600; font-size: .875rem; color: var(--k-text); }
+[data-sk-sidebar] .nav-link:hover, [data-sk-sidebar] .nav-link:focus-visible { background: var(--k-surface-2); color: var(--k-ink); }
+[data-sk-sidebar] .nav-link .nav-link-icon { color: var(--k-muted); }
+[data-sk-sidebar] .nav-item.active > .nav-link, [data-sk-sidebar] .nav-link.active { background: var(--tblr-navbar-active-bg); color: var(--k-ink); }
+[data-sk-sidebar] .nav-item.active > .nav-link .nav-link-icon, [data-sk-sidebar] .nav-link.active .nav-link-icon { color: var(--k-accent); }
+[data-sk-sidebar] .dropdown-menu { background: transparent; border: 0; box-shadow: none; padding: 0; }
+[data-sk-sidebar] .dropdown-item { margin: 1px 0; border-radius: 10px; color: var(--k-muted); font-weight: 600; font-size: .84rem; }
+[data-sk-sidebar] .dropdown-item:hover { background: var(--k-surface-2); color: var(--k-ink); }
+[data-sk-sidebar] .dropdown-item.active, [data-sk-sidebar] .sk-sublink.active { background: var(--tblr-navbar-active-bg); color: var(--k-ink); font-weight: 700; }
+[data-sk-sidebar] .offcanvas-header { border-bottom: 1px solid var(--k-line); }
+.sk-logo { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+    border-radius: 9px; background: var(--k-accent); color: var(--k-on-accent); font-size: 1.15rem; flex: 0 0 auto; }
+.sk-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.sk-brand-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-nav-heading { display: block; list-style: none; margin: 1rem .625rem .25rem; padding: 0; font: 600 .68rem/1.4 var(--k-font-mono);
+    letter-spacing: .14em; text-transform: uppercase; color: var(--k-muted); white-space: nowrap; }
+.sk-sublink { display: flex; align-items: center; gap: .5rem; }
+.sk-sidebar-foot { margin-top: auto; padding-top: .5rem !important; border-top: 1px solid var(--k-line); }
+.sk-sidebar-foot .nav-link { font: 400 .74rem/1.4 var(--k-font-mono); color: var(--k-muted); }
+.sk-version { opacity: .85; }
+.sk-version:hover, .sk-version.active { opacity: 1; }
+.sk-kit-version { display: block; padding: .15rem .75rem .5rem 2.75rem; font: 400 .7rem/1.4 var(--k-font-mono); color: var(--k-muted); white-space: nowrap; }
+
+/* ---------- Colour tiles behind the menu's icons (1.6.0) ----------
+   <aside … data-sk-sidebar data-sk-icon-tiles>, and on each menu item (the <li class="nav-item">) data-sk-color=
+   orange | amber | yellow | lime | green | teal | cyan | blue | indigo | purple | pink | red | slate: its icon sits
+   white on a rounded square of that colour, as app launchers show them, so a long menu is read by colour first (petweb
+   4.101.0; the owner, 26/11/2026: "thêm icon màu mè giống vậy cho đẹp hơn"). An item with no colour takes the accent.
+   The same in light and dark; folded, the tiles are the menu.
+   1.7.0: any icon font sits on the tile (Bootstrap Icons, Tabler Icons' .ti, Font Awesome, an <svg>), and data-sk-color
+   works on any element, so .sk-tile below repeats a menu item's colour in the page (a card's head, the home page). */
+[data-sk-color=orange] { --sk-tile: #f97316; }
+[data-sk-color=amber] { --sk-tile: #f59e0b; }
+[data-sk-color=yellow] { --sk-tile: #eab308; }
+[data-sk-color=lime] { --sk-tile: #65a30d; }
+[data-sk-color=green] { --sk-tile: #16a34a; }
+[data-sk-color=teal] { --sk-tile: #0d9488; }
+[data-sk-color=cyan] { --sk-tile: #0891b2; }
+[data-sk-color=blue] { --sk-tile: #2563eb; }
+[data-sk-color=indigo] { --sk-tile: #4f46e5; }
+[data-sk-color=purple] { --sk-tile: #9333ea; }
+[data-sk-color=pink] { --sk-tile: #db2777; }
+[data-sk-color=red] { --sk-tile: #dc2626; }
+[data-sk-color=slate] { --sk-tile: #64748b; }
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav > .nav-item > .nav-link > .nav-link-icon {
+    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+    width: 1.75rem; height: 1.75rem; margin-right: .6rem; border-radius: 8px; font-size: 1rem; line-height: 1;
+    background: var(--sk-tile, var(--k-accent)); color: #fff !important;
+    background-image: linear-gradient(160deg, rgb(255 255 255 / .22), rgb(255 255 255 / 0) 55%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .18), inset 0 -1px 0 rgb(0 0 0 / .12);
+}
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav > .nav-item > .nav-link > .nav-link-icon > * { color: #fff; }
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav > .nav-item > .nav-link:is(:hover, .active) > .nav-link-icon,
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav > .nav-item.active > .nav-link > .nav-link-icon { filter: saturate(1.15) brightness(1.05); }
+/* The tile is taller than the icon alone: the items keep a short menu short (as tall as before, about 2.5rem). */
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav > .nav-item > .nav-link { padding-top: .25rem; padding-bottom: .25rem; min-height: 2.5rem; }
+/* A tile anywhere in the page (1.7.0): <span class="sk-tile" data-sk-color="blue"><i class="ti ti-folder"></i></span>,
+   .sk-tile-sm (1.5rem, beside a line of text), .sk-tile-lg (2.5rem, a card or a page head). No colour: the accent. */
+.sk-tile { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 2rem; height: 2rem;
+    border-radius: 9px; font-size: 1.1rem; line-height: 1; vertical-align: middle; color: #fff !important;
+    background: var(--sk-tile, var(--k-accent));
+    background-image: linear-gradient(160deg, rgb(255 255 255 / .22), rgb(255 255 255 / 0) 55%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .18), inset 0 -1px 0 rgb(0 0 0 / .12); }
+.sk-tile > * { color: #fff; }
+.sk-tile-sm { width: 1.5rem; height: 1.5rem; border-radius: 7px; font-size: .85rem; }
+.sk-tile-lg { width: 2.5rem; height: 2.5rem; border-radius: 11px; font-size: 1.35rem; }
+/* The foot (the versions) keeps plain icons. */
+[data-sk-sidebar][data-sk-icon-tiles] .navbar-nav.sk-sidebar-foot > .nav-item > .nav-link > .nav-link-icon { background: none; box-shadow: none; color: var(--k-muted) !important; width: auto; height: auto; margin-right: .5rem; }
+
+@media (min-width: 992px) {
+    /* Folded (data-sk-fold, Tabler's folded-hover): icons only; the mouse or the keyboard on it opens it over the
+       page. Folded, the groups do not fly out and the headings give their room. */
+    [data-bs-sidebar=folded-hover] [data-sk-sidebar]:not(:hover):not(:has(:focus-visible)) .dropdown-menu { display: none !important; }
+    [data-bs-sidebar=folded-hover] [data-sk-sidebar]:not(:hover):not(:has(:focus-visible)) .sk-nav-heading { visibility: hidden; height: .75rem; margin: 0; }
+    [data-bs-sidebar=folded-hover] [data-sk-sidebar]:not(:hover):not(:has(:focus-visible)) .sk-sidebar-foot { border-top: 0; }
+    [data-bs-sidebar=folded-hover] [data-sk-sidebar]:not(:hover):not(:has(:focus-visible)) :is(.badge, .sk-kit-version) { display: none; }
+    [data-bs-sidebar=folded-hover] [data-sk-sidebar]:hover, [data-bs-sidebar=folded-hover] [data-sk-sidebar]:has(:focus-visible) { box-shadow: var(--k-shadow-lg); }
+}
+@media (max-width: 991.98px) {
+    /* Tablet in portrait, phone: the menu is a drawer slid in by the top bar's ☰; the navbar takes no room. */
+    [data-sk-sidebar] { min-height: 0; padding: 0; border: 0; background: transparent; }
+    [data-sk-sidebar] .offcanvas-lg { --tblr-offcanvas-width: min(18rem, 85vw); background: var(--k-bg-alt); }
+    [data-sk-sidebar] > .container-fluid { padding: 0; }
+    [data-sk-sidebar] .offcanvas-lg { align-items: stretch; }
+    [data-sk-sidebar] .offcanvas-header { width: 100%; justify-content: space-between; padding: 1rem 1.25rem; }
+    [data-sk-sidebar] .offcanvas-body, [data-sk-sidebar] .offcanvas-body > .navbar-nav { width: 100%; margin-left: 0; margin-right: 0; }
+    [data-sk-sidebar] .offcanvas-body { padding: .5rem 0 env(safe-area-inset-bottom); }
+    [data-sk-sidebar] .dropdown-menu { position: static !important; transform: none !important; }
+}
+
+/* The top bar: the page's title (its section above it), then the global controls; frosted like the kit's .k-topbar. */
+.sk-topbar { position: sticky; top: 0; z-index: 1020; flex-shrink: 0; height: auto; min-height: var(--sk-topbar-height);
+    padding-top: max(.25rem, env(safe-area-inset-top)); padding-bottom: .25rem;
+    border-bottom: 1px solid var(--k-line); background: var(--k-header-bg); box-shadow: none;
+    -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px); }
+.sk-topbar > .container-fluid { padding-left: max(var(--sk-gutter), env(safe-area-inset-left));
+    padding-right: max(var(--sk-gutter), env(safe-area-inset-right)); }
+.sk-title { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.sk-title .page-title { margin: 0; font: 700 1.05rem/1.3 var(--k-font-display); color: var(--k-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-title .page-pretitle { font: 600 .64rem/1.3 var(--k-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--k-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-title .page-pretitle a { color: inherit; }
+.sk-title .page-pretitle:empty, .sk-title .page-title:empty { display: none; }
+.sk-title > :not(.page-title):not(.page-pretitle) { display: none; }   /* the lead line stays in the page */
+.sk-title .page-title :is(.badge, .btn) { display: none; }
+/* The kit's light / dark switch ([data-theme-toggle], kit.js) in a Tabler top bar: the moon in light mode, the sun in dark. */
+.sk-theme .sk-theme-sun { display: none; }
+:root[data-theme=dark] .sk-theme .sk-theme-sun { display: inline; }
+:root[data-theme=dark] .sk-theme .sk-theme-moon { display: none; }
+@media (max-width: 575.98px) {
+    .sk-title { flex: 1 1 auto; }
+    .sk-title .page-pretitle { display: none; }
+    .sk-phone-hide { display: none !important; }   /* language / theme move into the account menu */
+}
+
+/* The page: its head holds what the title in the top bar does not - the lead line and the page's actions. */
+.sk-body { margin-top: 0 !important; padding-top: var(--sk-gutter); padding-bottom: calc(var(--sk-gutter) + 4rem + env(safe-area-inset-bottom)); }
+.sk-body > .container-fluid, .sk-body > .container-xl { padding-left: max(var(--sk-gutter), env(safe-area-inset-left));
+    padding-right: max(var(--sk-gutter), env(safe-area-inset-right)); }
+.sk-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem 1rem; margin-bottom: var(--sk-gutter); }
+.sk-page-head:not(:has(.sk-lead > :not(.page-title):not(.page-pretitle))):not(:has(.sk-actions > *)) { display: none; }
+.sk-lead { flex: 1 1 20rem; min-width: 0; color: var(--k-muted); }
+.sk-lead > .page-title, .sk-lead > .page-pretitle { display: none; }
+.sk-lead > * { margin-top: 0 !important; }
+.sk-actions { flex: 0 0 auto; margin-left: auto; }
+.sk-actions:empty { display: none; }
+@media (max-width: 575.98px) {
+    .sk-actions { flex: 1 1 100%; margin-left: 0; }
+    .sk-actions .btn-list, .sk-actions > .btn { width: 100%; }
+}
+
+/* A filter bar above a table: controls side by side, a full line each on a phone. */
+.sk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.sk-toolbar > .form-control, .sk-toolbar > .form-select { width: auto; min-width: 9rem; flex: 0 1 auto; }
+.sk-toolbar > .sk-grow { flex: 1 1 14rem; min-width: 10rem; }
+.sk-toolbar > .sk-end { margin-left: auto; }
+@media (max-width: 575.98px) {
+    .sk-toolbar > * { flex: 1 1 100% !important; width: 100% !important; margin-left: 0 !important; }
+}
+.sk-count { font-size: .8125rem; color: var(--k-muted); }
+
+/* Stat cards in a row that wraps by itself. */
+.sk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--sk-gutter); margin-bottom: var(--sk-gutter); }
+.sk-stat .card-body { padding: 1rem 1.25rem; }
+.sk-stat-label { font-size: .8125rem; color: var(--k-muted); }
+.sk-stat-value { font: 700 1.4rem/1.3 var(--k-font-display); color: var(--k-ink); }
+.sk-stat-note { font-size: .75rem; color: var(--k-muted); }
+
+/* Tables: scroll sideways inside their card, header kept in sight. .sk-table-stack turns each row into a card on a
+   phone, each cell labelled by its column (kit-bs.js writes data-label from the header). */
+.sk-table-wrap { overflow: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.sk-table-wrap.sk-table-tall { max-height: calc(100dvh - 14rem); }
+.sk-table-wrap > .table { margin-bottom: 0; }
+.sk-table-wrap > .table thead th { position: sticky; top: 0; z-index: 1; background: var(--k-surface-2); }
+.sk-nowrap { white-space: nowrap; }
+/* The first column stays in sight while a wide table scrolls sideways. */
+.sk-sticky-first > tbody > tr > :first-child, .sk-sticky-first > thead > tr > :first-child {
+    position: sticky; left: 0; z-index: 2; background: var(--k-surface); }
+/* Forms and text read best at a bounded width; reports and tables use the whole width. */
+.sk-narrow { max-width: 80rem; }
+.sk-clip { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767.98px) {
+    .sk-table-stack thead { display: none; }
+    .sk-table-stack, .sk-table-stack tbody, .sk-table-stack tr, .sk-table-stack td { display: block; width: 100%; }
+    .sk-table-stack tr { padding: .5rem 0; border-bottom: 1px solid var(--k-line); }
+    .sk-table-stack td { border: 0 !important; padding: .15rem .75rem !important; white-space: normal !important; max-width: none !important; }
+    .sk-table-stack td[data-label]::before { content: attr(data-label); display: block; font: 600 .66rem/1.3 var(--k-font-mono);
+        text-transform: uppercase; letter-spacing: .1em; color: var(--k-muted); }
+    .sk-table-stack td:empty { display: none; }
+}
+
+/* The floating button (bottom right, clear of the iPhone's home bar). */
+.sk-fab { position: fixed; z-index: 1030; right: calc(var(--sk-fab-offset) + env(safe-area-inset-right));
+    bottom: calc(var(--sk-fab-offset) + env(safe-area-inset-bottom)); border-radius: 2rem; padding: .55rem 1.1rem;
+    box-shadow: var(--k-shadow-lg); }
+/* A second floating button beside the first (e.g. Feedback and Ask AI). */
+.sk-fab.sk-fab-second { right: calc(var(--sk-fab-offset) + env(safe-area-inset-right) + 8rem); }
+@media (max-width: 575.98px) {
+    .sk-fab { padding: 0; width: 3.25rem; height: 3.25rem; justify-content: center; font-size: 0; }
+    .sk-fab > i { font-size: 1.4rem; margin: 0 !important; }
+    .sk-fab > :not(i) { display: none; }
+    .sk-fab.sk-fab-second { right: calc(var(--sk-fab-offset) + env(safe-area-inset-right) + 4rem); }
+}
+
+/* "What's new" and other change lists. */
+.sk-changes h3 { font-size: .95rem; margin: 1rem 0 .35rem; }
+.sk-changes h3:first-child { margin-top: 0; }
+.sk-changes ul { padding-left: 1.2rem; margin: 0; }
+.sk-changes li { margin-bottom: .25rem; }
+.sk-changes code { font-size: .85em; }
+
+/* Fingers, keyboards, motion, print. */
+@media (pointer: coarse) {
+    [data-sk-sidebar] .nav-link, [data-sk-sidebar] .dropdown-item, .sk-topbar .btn, .sk-topbar .nav-link,
+    .dropdown-menu .dropdown-item { min-height: var(--sk-touch); display: flex; align-items: center; }
+    .btn, .form-control, .form-select { min-height: var(--sk-touch); }
+    .btn-sm, .form-control-sm, .form-select-sm { min-height: 2.25rem; }
+}
+:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media print {
+    [data-sk-sidebar], .sk-topbar, .sk-fab, .sk-actions { display: none !important; }
+    .sk-body { padding: 0 !important; }
+}
+.sk-phone-only { display: none !important; }
+@media (max-width: 575.98px) { .sk-phone-only { display: revert !important; } }

@@ -25,6 +25,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     false,
     func,
     text,
@@ -116,6 +117,10 @@ class User(Base):
     # Set while the password is one everybody knows (the default administrator's): the session
     # then opens nothing but the account page, until the user has chosen another one.
     must_change_password: Mapped[bool] = _bool(False)
+    # Days one sign-in of this user lasts, used or not, instead of [session] idle_minutes and
+    # absolute_hours (owner, ORD 402: the viewers of a dashboard stay signed in for a month, the
+    # browser closed or not). Empty: the [session] limits.
+    session_days: Mapped[int | None] = mapped_column(Integer)
     failed_login_count: Mapped[int] = _int(0)
     locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
@@ -597,6 +602,157 @@ class ReportBiParam(Base):
 
 
 # --------------------------------------------------------------------------------------------
+# Mirrors: copies of source tables in the DRS database (drscore.mirror)
+
+MIRROR_MODES = ("full", "incremental")
+MIRROR_STATUSES = ("ok", "error", "running")
+
+
+class MirrorTable(Base):
+    """One source table (or view) copied into the mirror schema on a schedule. Several mirrors may
+    write one target table - the same table of several servers - each its own rows (``_source``)."""
+
+    __tablename__ = "drs_mirror_table"
+    __table_args__ = (
+        CheckConstraint(_in("mode", MIRROR_MODES), name="mode"),
+        CheckConstraint(f"last_status IS NULL OR {_in('last_status', MIRROR_STATUSES)}", name="last_status"),
+        AUTOINC,
+    )
+
+    mirror_id: Mapped[int] = _id()
+    mirror_code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    datasource_id: Mapped[int] = _fk("drs_datasource.datasource_id", cascade=False)
+    source_object: Mapped[str] = mapped_column(String(300), nullable=False)  # table or view, [schema.]name
+    columns_json: Mapped[Any | None] = mapped_column(JsonType)  # source column names; empty: every column
+    where_sql: Mapped[str | None] = mapped_column(Text)  # a filter in the source's own SQL
+    target_table: Mapped[str] = mapped_column(String(63), nullable=False)
+    key_columns_json: Mapped[Any | None] = mapped_column(JsonType)  # the row key; required by incremental
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="full", server_default="full")
+    # incremental: only rows whose watermark column is above the last value read (minus lookback)
+    watermark_column: Mapped[str | None] = mapped_column(String(128))
+    watermark_value: Mapped[str | None] = mapped_column(String(100))
+    lookback_seconds: Mapped[int] = _int(0)
+    interval_minutes: Mapped[int] = _int(60)
+    full_refresh_hours: Mapped[int | None] = mapped_column(Integer)  # incremental: a full copy this often
+    run_hours: Mapped[str | None] = mapped_column(String(100))  # e.g. "0-6,22-23" (app timezone); empty: any
+    full_hours: Mapped[str | None] = mapped_column(String(100))  # when the periodic full copy may start; empty: any
+    read_uncommitted: Mapped[bool] = _bool(False)  # SQL Server: read without shared locks
+    is_active: Mapped[bool] = _bool(True)
+    last_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_full_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_status: Mapped[str | None] = mapped_column(String(20))
+    last_rows: Mapped[int | None] = mapped_column(Integer)
+    last_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(String(2000))
+    lock_owner: Mapped[str | None] = mapped_column(String(100))
+    lock_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+
+    datasource: Mapped[Datasource] = relationship()
+
+    def __str__(self) -> str:
+        return self.mirror_code
+
+
+# --------------------------------------------------------------------------------------------
+# Choice lists: choices ticked on a page and copied for the reports (drscore.choicelist)
+
+class ChoiceList(Base):
+    """A short list of choices - which kinds of item a report counts, say - ticked on a page by the
+    person who decides, instead of being written into the report's SQL. DRS copies it into a table
+    of the mirror schema (``target_table``) for the reports to join; a public link may be allowed to
+    change the ticks."""
+
+    __tablename__ = "drs_choice_list"
+    __table_args__ = (AUTOINC,)
+
+    list_id: Mapped[int] = _id()
+    list_code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    target_table: Mapped[str] = mapped_column(String(63), nullable=False, unique=True)
+    is_active: Mapped[bool] = _bool(True)
+    changed_by: Mapped[str | None] = mapped_column(String(100))  # who changed the ticks last
+    changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+
+    items: Mapped[list["ChoiceItem"]] = relationship(back_populates="choice_list", cascade="all, delete-orphan",
+                                                     order_by="(ChoiceItem.sort_order, ChoiceItem.item_key)")
+
+    def __str__(self) -> str:
+        return self.list_code
+
+
+class ChoiceItem(Base):
+    """One choice of a list: its key (what the reports join on), its label and whether it is ticked."""
+
+    __tablename__ = "drs_choice_item"
+    __table_args__ = (UniqueConstraint("list_id", "item_key"), AUTOINC)
+
+    item_id: Mapped[int] = _id()
+    list_id: Mapped[int] = _fk("drs_choice_list.list_id")
+    item_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    group_name: Mapped[str | None] = mapped_column(String(100))
+    detail: Mapped[str | None] = mapped_column(Text)  # what the choice covers, for the person who ticks
+    sort_order: Mapped[int] = _int(0)
+    is_checked: Mapped[bool] = _bool(False)
+    changed_by: Mapped[str | None] = mapped_column(String(100))
+    changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    choice_list: Mapped[ChoiceList] = relationship(back_populates="items")
+
+
+# --------------------------------------------------------------------------------------------
+# Public links: a report opened without signing in (drscore.publiclink)
+
+PUBLIC_VIEWS = ("bi", "grid", "html")
+
+
+class PublicLink(Base):
+    """A secret URL that shows one report, read-only, as one user sees it - for a screen on the wall,
+    or a reader who has no DRS account. Only the hash of its token is kept."""
+
+    __tablename__ = "drs_public_link"
+    __table_args__ = (CheckConstraint(_in("view_key", PUBLIC_VIEWS), name="view_key"), AUTOINC)
+
+    link_id: Mapped[int] = _id()
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # sha256 hex
+    token_hint: Mapped[str] = mapped_column(String(8), nullable=False)  # its first characters, to tell links apart
+    report_id: Mapped[int] = _fk("drs_report.report_id")
+    run_as_user_id: Mapped[int] = _fk("drs_user.user_id")  # the report runs with this user's rights
+    title: Mapped[str | None] = mapped_column(String(200))
+    params_json: Mapped[Any | None] = mapped_column(JsonType)  # the parameter values it runs with
+    editable_json: Mapped[Any | None] = mapped_column(JsonType)  # the parameters a reader may change
+    view_key: Mapped[str] = mapped_column(String(10), nullable=False, default="bi", server_default="bi")
+    refresh_seconds: Mapped[int | None] = mapped_column(Integer)  # the page reloads itself (a wall screen)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    is_active: Mapped[bool] = _bool(True)
+    # True: anybody with the address sees the report, as run_as sees it. False (ORD 402): the address
+    # opens the sign-in page, and the report runs as the signed-in reader, with their own rights.
+    is_public: Mapped[bool] = _bool(True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = _now()
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    use_count: Mapped[int] = _int(0)
+    # the choice list a reader of this link may tick (its page reads and saves it): none = read-only
+    choice_list_id: Mapped[int | None] = _fk("drs_choice_list.list_id", nullable=True, cascade=False)
+    # the other sites whose pages may show this link in a frame (CSP frame-ancestors): "*" for any site,
+    # or origins separated by spaces; none = this portal only (ORD 437, 1.8.0)
+    frame_ancestors: Mapped[str | None] = mapped_column(String(1000))
+
+    report: Mapped["Report"] = relationship()
+    run_as: Mapped[User] = relationship()
+    choice_list: Mapped[ChoiceList | None] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.token_hint}... ({self.report.report_code if self.report else self.report_id})"
+
+
+# --------------------------------------------------------------------------------------------
 # Sessions and logs
 
 class Session(Base):
@@ -660,6 +816,192 @@ class AuditLog(Base):
     object_key: Mapped[str] = mapped_column(String(200), nullable=False)
     before_json: Mapped[Any | None] = mapped_column(JsonType)
     after_json: Mapped[Any | None] = mapped_column(JsonType)
+
+
+ACTIVITY_OUTCOMES = ("OK", "DENIED", "ERROR")
+
+
+class ActivityLog(Base):
+    """Every request a user makes (drscore.activity): pages opened, every change, every refused or failed
+    request - with what was sent, secrets left out. drs_access_log and drs_audit_log stay as they are."""
+
+    __tablename__ = "drs_activity_log"
+    __table_args__ = (
+        CheckConstraint(_in("outcome", ACTIVITY_OUTCOMES), name="outcome"),
+        Index(None, "logged_at"),
+        Index(None, "username", "logged_at"),
+        AUTOINC,
+    )
+
+    activity_id: Mapped[int] = _id()
+    logged_at: Mapped[datetime] = _now()
+    username: Mapped[str] = mapped_column(String(100), nullable=False)  # "-": not signed in
+    action: Mapped[str] = mapped_column(String(60), nullable=False)  # e.g. design.save, admin.edit
+    object_key: Mapped[str | None] = mapped_column(String(200))  # a report code, a draft id, ...
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(400), nullable=False)
+    query_text: Mapped[str | None] = mapped_column(String(2000))
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(10), nullable=False)
+    detail_json: Mapped[Any | None] = mapped_column(JsonType)  # the fields sent, secrets masked
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    client_ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(400))
+    request_id: Mapped[str | None] = mapped_column(String(32))
+
+
+# --------------------------------------------------------------------------------------------
+# Secrets kept encrypted in the DRS database (drscore.secretstore): the AI key, bot tokens
+
+class Secret(Base):
+    __tablename__ = "drs_secret"
+
+    secret_name: Mapped[str] = mapped_column(String(60), primary_key=True)  # e.g. ai.api_key
+    secret_ref: Mapped[str] = mapped_column(Text, nullable=False)  # enc:<Fernet token>, never the value
+    updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    updated_at: Mapped[datetime] = _now_updated()
+
+
+# --------------------------------------------------------------------------------------------
+# Feedback (Góp ý)
+
+FEEDBACK_KINDS = ("bug", "idea", "question")
+FEEDBACK_URGENCIES = ("high", "normal", "low")
+FEEDBACK_STATUSES = ("new", "seen", "doing", "done", "wontfix")
+COMMENT_AUTHORS = ("user", "admin", "ai")
+
+
+class Feedback(Base):
+    __tablename__ = "drs_feedback"
+    __table_args__ = (
+        CheckConstraint(_in("kind", FEEDBACK_KINDS), name="kind"),
+        CheckConstraint(_in("urgency", FEEDBACK_URGENCIES), name="urgency"),
+        CheckConstraint(_in("status", FEEDBACK_STATUSES), name="status"),
+        Index(None, "username"),
+        Index(None, "status"),
+        AUTOINC,
+    )
+
+    feedback_id: Mapped[int] = _id()
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="bug", server_default="bug")
+    urgency: Mapped[str] = mapped_column(String(10), nullable=False, default="normal", server_default="normal")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    page_path: Mapped[str | None] = mapped_column(String(400))  # the page it is about
+    app_version: Mapped[str | None] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="new", server_default="new")
+    done_version: Mapped[str | None] = mapped_column(String(20))
+    ai_note: Mapped[str | None] = mapped_column(Text)  # Typhon's note for the administrators
+    handled_by: Mapped[str | None] = mapped_column(String(100))
+    handled_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())  # the sender ticked the fix as checked
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+
+    comments: Mapped[list["FeedbackComment"]] = relationship(
+        back_populates="feedback", cascade="all, delete-orphan", order_by="FeedbackComment.comment_id")
+    files: Mapped[list["FeedbackFile"]] = relationship(
+        back_populates="feedback", cascade="all, delete-orphan", order_by="FeedbackFile.file_id")
+
+    def __str__(self) -> str:
+        return f"#{self.feedback_id}"
+
+
+class FeedbackComment(Base):
+    __tablename__ = "drs_feedback_comment"
+    __table_args__ = (CheckConstraint(_in("author_kind", COMMENT_AUTHORS), name="author_kind"), AUTOINC)
+
+    comment_id: Mapped[int] = _id()
+    feedback_id: Mapped[int] = _fk("drs_feedback.feedback_id")
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    author_kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = _now()
+
+    feedback: Mapped[Feedback] = relationship(back_populates="comments")
+
+
+class FeedbackFile(Base):
+    __tablename__ = "drs_feedback_file"
+    __table_args__ = (AUTOINC,)
+
+    file_id: Mapped[int] = _id()
+    feedback_id: Mapped[int] = _fk("drs_feedback.feedback_id")
+    file_name: Mapped[str] = mapped_column(String(200), nullable=False)  # as the sender named it
+    media_type: Mapped[str] = mapped_column(String(100), nullable=False)  # from the file's first bytes
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(100), nullable=False)  # under [feedback] files_dir
+    created_at: Mapped[datetime] = _now()
+
+    feedback: Mapped[Feedback] = relationship(back_populates="files")
+
+
+# --------------------------------------------------------------------------------------------
+# The AI agent (Typhon)
+
+AI_STATUSES = ("ok", "refused", "error")
+
+
+class AiConversation(Base):
+    __tablename__ = "drs_ai_conversation"
+    __table_args__ = (Index(None, "username"), AUTOINC)
+
+    conversation_id: Mapped[int] = _id()
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    messages_json: Mapped[Any] = mapped_column(JsonType, nullable=False)  # the turns sent to the model
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+
+
+class AiUsage(Base):
+    """One question to Typhon (or one feedback it read), answered or refused, with what it cost."""
+
+    __tablename__ = "drs_ai_usage"
+    __table_args__ = (
+        CheckConstraint(_in("status", AI_STATUSES), name="status"),
+        Index(None, "asked_at"),
+        Index(None, "username", "asked_at"),
+        AUTOINC,
+    )
+
+    usage_id: Mapped[int] = _id()
+    asked_at: Mapped[datetime] = _now()
+    username: Mapped[str] = mapped_column(String(100), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False, default="ask", server_default="ask")
+    conversation_id: Mapped[int | None] = mapped_column(IdType)  # no FK: the log outlives a conversation
+    feedback_id: Mapped[int | None] = mapped_column(IdType)
+    page_path: Mapped[str | None] = mapped_column(String(400))
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str | None] = mapped_column(Text)
+    tools_json: Mapped[Any | None] = mapped_column(JsonType)  # every tool run: name, input, size of its result
+    model: Mapped[str | None] = mapped_column(String(60))
+    input_tokens: Mapped[int] = _int(0)
+    output_tokens: Mapped[int] = _int(0)
+    cache_read_tokens: Mapped[int] = _int(0)
+    cache_write_tokens: Mapped[int] = _int(0)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, default=Decimal(0),
+                                              server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(String(2000))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+
+
+# --------------------------------------------------------------------------------------------
+# Notices sent to Telegram / Zalo (drscore.notify)
+
+class NoticeLog(Base):
+    __tablename__ = "drs_notice_log"
+    __table_args__ = (Index(None, "sent_at"), AUTOINC)
+
+    notice_id: Mapped[int] = _id()
+    sent_at: Mapped[datetime] = _now()
+    channel: Mapped[str] = mapped_column(String(10), nullable=False)  # telegram / zalo
+    chat_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    event: Mapped[str] = mapped_column(String(40), nullable=False)
+    text_sent: Mapped[str] = mapped_column(Text, nullable=False)
+    is_ok: Mapped[bool] = _bool(False)
+    error_message: Mapped[str | None] = mapped_column(String(1000))  # the token is never written
 
 
 ALL_TABLES = sorted(Base.metadata.tables)

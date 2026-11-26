@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 from typing import Iterator
 
 from fastapi import Depends, Request
@@ -21,6 +22,9 @@ CSRF_FIELD = "csrf_token"
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # Routes that change state but cannot have a session yet.
 CSRF_EXEMPT_PREFIXES = ("/login", "/auth/sso/")
+# A public link's choice list and a table link's run (routes/public.py): no session at all - the secret
+# token in the path is the right to use it, and the routes take JSON only, from their own origin.
+CSRF_EXEMPT_PATHS = re.compile(r"^/p/[A-Za-z0-9_-]{1,100}/(list|api/run)$")
 
 
 def db_session(request: Request) -> Iterator[Session]:
@@ -46,6 +50,8 @@ async def csrf_guard(request: Request, session: Session = Depends(db_session)) -
     """Applied to every route. A state-changing request must carry the session's CSRF token in
     the X-CSRF-Token header or the csrf_token form field."""
     if request.method not in UNSAFE_METHODS or request.url.path.startswith(CSRF_EXEMPT_PREFIXES):
+        return
+    if CSRF_EXEMPT_PATHS.match(request.url.path):
         return
     info = current_session(request, session)
     if info is None:
