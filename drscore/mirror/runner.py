@@ -45,6 +45,7 @@ from sqlalchemy import (
     bindparam,
     delete,
     inspect,
+    literal_column,
     or_,
     select,
     text,
@@ -298,9 +299,10 @@ def read_source(job: Job, columns: Sequence[str], wm: Any, batch_rows: int,
 # --------------------------------------------------------------------------------------------
 # The target
 
-def target_table(database: Database, job: Job, columns: Sequence[tuple[str, TypeEngine]]) -> Table:
+def target_table(database: Database, job: Job, columns: Sequence[tuple[str, TypeEngine]], *,
+                 unlogged: bool = False) -> Table:
     """The copy's table as this mirror writes it: ``_source``, the source columns (lower case),
-    ``_synced_at``. The key is (``_source``, key columns)."""
+    ``_synced_at``. The key is (``_source``, key columns). ``unlogged``: PostgreSQL only."""
     cols = [Column(SOURCE_COLUMN, Text, nullable=False)]
     cols += [Column(name.lower(), target_type(typ)) for name, typ in columns]
     cols.append(Column(SYNCED_COLUMN, DateTime, nullable=False))
@@ -310,7 +312,13 @@ def target_table(database: Database, job: Job, columns: Sequence[tuple[str, Type
                                           name=f"pk_{job.target}"[:63]))
     else:
         extra.append(Index(f"ix_{job.target}__source"[:63], SOURCE_COLUMN))
-    return Table(job.target, MetaData(schema=database.mirror_schema), *cols, *extra)
+    return Table(job.target, MetaData(schema=database.mirror_schema), *cols, *extra,
+                 prefixes=["UNLOGGED"] if unlogged else [])
+
+
+def wants_unlogged(database: Database, settings: AppSettings) -> bool:
+    """Whether this server's copies are unlogged tables (``[mirror] unlogged``, PostgreSQL only)."""
+    return settings.mirror.unlogged and database.mirror_engine.dialect.name == "postgresql"
 
 
 def _role(settings: AppSettings) -> str | None:
@@ -346,10 +354,32 @@ def ensure_target(database: Database, settings: AppSettings, job: Job, table: Ta
             if job.key and pk != wanted:
                 raise MirrorError(f"mirror {job.code}: table {_display(database, job.target)} has the key "
                                   f"({', '.join(pk) or 'none'}), this mirror needs ({', '.join(wanted)})")
+            if engine.dialect.name == "postgresql":
+                _set_persistence(conn, database, job, relation, wants_unlogged(database, settings))
         role = _role(settings) if schema else None
         if role:
             conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA {quote(schema)} TO {quote(role)}")
             conn.exec_driver_sql(f"GRANT SELECT ON {quote(schema)}.{quote(job.target)} TO {quote(role)}")
+
+
+def _set_persistence(conn, database: Database, job: Job, relation: str, unlogged: bool) -> None:
+    """Switches an existing copy to what ``[mirror] unlogged`` says. The table is rewritten once,
+    under an exclusive lock: a report reading it waits for the few seconds that takes."""
+    persistence = conn.execute(text("SELECT relpersistence FROM pg_class WHERE oid = to_regclass(:r)"),
+                               {"r": relation}).scalar()
+    wanted = "u" if unlogged else "p"
+    if persistence in ("u", "p") and persistence != wanted:
+        conn.exec_driver_sql(f"ALTER TABLE {relation} SET {'UNLOGGED' if unlogged else 'LOGGED'}")
+        log.info("mirror %s: table %s is now %s", job.code, _display(database, job.target),
+                 "unlogged" if unlogged else "logged")
+
+
+def _holds_rows(database: Database, job: Job, table: Table) -> bool:
+    """Whether the copy has any row of this mirror's source."""
+    with database.mirror_engine.connect() as conn:
+        found = conn.execute(select(literal_column("1")).select_from(table)
+                             .where(table.c[SOURCE_COLUMN] == job.source.code).limit(1)).first()
+    return found is not None
 
 
 def _display(database: Database, name: str) -> str:
@@ -538,8 +568,13 @@ def _run(database: Database, settings: AppSettings, job: Job, force_full: bool, 
     full = wants_full(job, force_full, utcnow(), settings.tz)
     columns = source_columns(job)
     names = [name for name, _ in columns]
-    table = target_table(database, job, columns)
+    table = target_table(database, job, columns, unlogged=wants_unlogged(database, settings))
     ensure_target(database, settings, job, table)
+    if not full and not _holds_rows(database, job, table):
+        # A crash empties an unlogged table, but the watermark survives in the DRS schema: an
+        # incremental run would add the latest rows to an empty copy and call it up to date.
+        log.info("mirror %s: the copy holds no row of %s - full copy", job.code, job.source.code)
+        full = True
 
     wm_index = wm_type = None
     if job.watermark_column:

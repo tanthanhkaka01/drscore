@@ -116,6 +116,26 @@ schema comes first in the search path). On SQLite, the datasource is of type `sq
 | `timeout_seconds` | `3600` | the longest one source query may take |
 | `lock_minutes` | `15` | a run's claim, renewed every minute while it copies: a server stopped mid-copy frees it |
 | `read_role` | `""` | PostgreSQL role given SELECT on the mirror tables |
+| `unlogged` | `true` | PostgreSQL: the copies are `UNLOGGED` tables (below) |
+
+## Unlogged copies (PostgreSQL)
+
+A full copy deletes and inserts every row of its source, every time it runs. In an ordinary table
+each of those rows is written to the WAL, which a server with `archive_mode` keeps and backs up with
+everything else - on 2026-10-28 the mirrors were 70-98% of the DRS server's WAL, about 22 GB a day
+for a 4 GB mirror schema. A copy can always be read again from its source, so DRS makes it an
+`UNLOGGED` table: no WAL, and no copy in a base backup.
+
+What that costs: after a crash (or an immediate shutdown) PostgreSQL empties every unlogged table.
+Each copy is filled again at its mirror's next run - an incremental mirror sees that its copy holds
+no row of its source and makes a full copy instead of trusting its watermark. Until then a report on
+that copy shows nothing; `python -m drscore mirror run <code>` refills one at once. A clean
+restart keeps the rows. A replica (streaming standby) has the tables but no rows.
+
+`unlogged = false` makes them ordinary tables. Either way an existing copy is switched at its
+mirror's next run, with `ALTER TABLE ... SET [UN]LOGGED`: the table is rewritten once, under a lock
+that makes a report reading it wait for the few seconds that takes. Switching to logged writes the
+whole table to the WAL once.
 
 Every server process looks for due mirrors; a mirror is claimed in the DRS database before it runs,
 so two processes - or two servers on one database - never copy the same table at once. Changes to

@@ -87,6 +87,7 @@ batch_rows = 10000
 timeout_seconds = 3600                # the longest one source query may take
 lock_minutes = 15                     # a run's claim, renewed while it copies; a stopped server frees it
 read_role = ""                        # PostgreSQL role given SELECT on the mirror tables
+unlogged = true                       # PostgreSQL: copies are UNLOGGED (no WAL; emptied by a crash, refilled)
 
 [public]
 # Public links: one report opened by a secret URL, without signing in - a wall screen, a reader with

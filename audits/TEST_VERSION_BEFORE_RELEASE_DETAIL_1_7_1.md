@@ -18,7 +18,7 @@ the same.*
 | 1.1 | A table link (`--view grid`) renders the portal's own report page body (`_report_body.html`, shared with `report.html`) and `report.js`, without the menu - **done** |
 | 1.2 | Its calls go to the link: `POST /p/<token>/api/run`, `GET /p/<token>/api/params/<name>/options`, `GET /p/<token>/export` - **done** |
 | 1.3 | Export and refresh follow the grant of the link's user; the form shows only the editable parameters - **done** |
-| Tests | full suite SQLite + PostgreSQL on IT-DB01: 899 passed, 5 failed = 2 known PG-only + 3 fixed after (§2) |
+| Tests | full suite SQLite + PostgreSQL on a test host: 899 passed, 5 failed = 2 known PG-only + 3 fixed after (§2) |
 | Build / worker / check | wheel from tree `c277004d`; on the worker since 2026-11-09T07:36Z; the 7 HRMS links checked in headless Edge (§3) - **done** |
 | Commit / publish | not yet: wait for the operator's word |
 
@@ -52,7 +52,7 @@ No migration, no new dependency (wheel swapped into the 1.7.0 image).
 | --- | --- | --- |
 | `tests/test_publiclink.py` (4 new, 4 adapted to the page asking `/api/run`), `test_report_views`, `test_portal_reports` | 2026-11-09 ~07:20Z | 45 passed |
 | Full suite, SQLite + PostgreSQL, on this PC | ~07:25Z | stopped by Claude Code: the build PC ran low on memory - not counted |
-| Full suite, SQLite + PostgreSQL 16, on IT-DB01 (container `drs-test-run-171`, Linux) | 07:37-08:13Z | 899 passed, 3 skipped, 5 failed |
+| Full suite, SQLite + PostgreSQL 16, on a test host (container `drs-test-run-171`, Linux) | 07:37-08:13Z | 899 passed, 3 skipped, 5 failed |
 | The 3 new failures fixed, `test_changelog_system` + `test_pages` | ~08:20Z | 29 passed |
 
 The 5 failures: the 2 PostgreSQL-only ones known since 1.4.2 (`test_bi_members::test_the_bi_page_saves_the_form`,

@@ -41,7 +41,7 @@ No migration, no new dependency.
 | `test_publiclink`, `test_pages`, `test_startup`, `test_settings`, `test_cli`, `test_integrations` | ~08:25Z | 77 passed, 1 skipped |
 | `test_changelog_system` (the `/changes` check follows the changelog instead of fixed versions) | ~08:30Z | 14 passed |
 
-Full suite not run for this version (1.7.1's full run on IT-DB01: 899 passed, the 2 known PG failures + 3 fixed).
+Full suite not run for this version (1.7.1's full run on a test host: 899 passed, the 2 known PG failures + 3 fixed).
 
 ## 3. Build and deploy
 

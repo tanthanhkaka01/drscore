@@ -263,6 +263,13 @@ class MirrorSection(_Section):
     # PostgreSQL: the role given SELECT on the mirror schema and its tables - the login of the
     # datasource that reports read the mirror through. Empty: no grant is made.
     read_role: str = ""
+    # PostgreSQL: the copies are UNLOGGED tables. A full copy deletes and inserts every row of its
+    # source, and every one of those rows went through the WAL - archived and backed up with the
+    # whole cluster (2026-10-28: the mirrors were ~70-98% of the DRS server's WAL, ~22 GB a day).
+    # A copy can always be read again from its source, so it need not survive a crash: PostgreSQL
+    # empties an unlogged table after one, and the next run of each mirror fills it again.
+    # false: ordinary (logged) tables; existing copies are switched either way at their next run.
+    unlogged: bool = True
 
 
 class PublicSection(_Section):

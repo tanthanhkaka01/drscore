@@ -2,6 +2,9 @@
 
 Mỗi lần sửa code đều tăng phiên bản (`pyproject.toml`): sửa lỗi tăng số cuối (1.6.3 → 1.6.4), thêm chức năng tăng số giữa (1.6.4 → 1.7.0). Phiên bản hiện ở cuối menu trái và ở trang đăng nhập; bấm vào để xem các thay đổi, và bản mới tự hiện "Có gì mới" một lần trên mỗi máy. Mỗi dòng ghi cho ai đọc: `[admin]` chỉ quản trị, `[designer]` người thiết kế báo cáo và quản trị, không ghi là mọi người; bản không có dòng nào cho một tài khoản thì tài khoản đó thấy "Cải thiện hệ thống và sửa lỗi nhỏ." Bản tiếng Anh ở `CHANGELOG.md`, cùng các phiên bản; bộ kiểm thử không chạy qua nếu phiên bản trong `pyproject.toml` chưa được ghi ở đầu cả hai file.
 
+## 1.11.0 — 2026-11-26
+- [admin] **Bản sao mirror trên PostgreSQL là bảng `UNLOGGED`** (`[mirror] unlogged = true`, mặc định): mỗi lần chép đầy đủ, mirror xoá rồi ghi lại mọi dòng, và trước đây mọi dòng đó đều đi qua WAL - được lưu trữ và backup cùng cả cluster (ngày 28/10/2026 mirror chiếm khoảng 70-98% WAL của server DRS, chừng 22 GB một ngày cho 4 GB dữ liệu mirror). Bảng unlogged không ghi WAL và không nằm trong base backup. Đổi lại, sau một lần server sập (hoặc tắt kiểu immediate) PostgreSQL làm rỗng các bảng này; lần chạy kế tiếp của mỗi mirror tự chép lại đầy đủ (mirror incremental thấy bản sao không còn dòng nào của nguồn thì chép đầy đủ thay vì tin watermark), hoặc chạy ngay `python -m drscore mirror run <code>`. Bản sao đang có được chuyển kiểu ở lần chạy kế tiếp; `unlogged = false` để giữ bảng thường. SQLite và SQL Server không đổi. Chi tiết: `docs/mirror.md`.
+
 ## 1.10.0 — 2026-11-26
 - **Giao diện mới, theo bộ giao diện chung (kit 1.7.0) của dbabrain.dev**: chữ Manrope có dấu tiếng Việt, màu chàm, góc bo mềm, sáng / tối tự theo máy hoặc theo nút trên thanh trên cùng. Menu trái sáng khi giao diện sáng; mỗi mục có **biểu tượng trên ô màu**, mỗi nhóm báo cáo một màu, trang chủ dùng lại đúng màu đó trên thẻ của nhóm.
 - Trang đăng nhập và trang báo cáo mở bằng link cũng theo giao diện mới.

@@ -17,7 +17,7 @@ chưa đủ thì có thể upgrade kit rồi dùng) ... thiết kế lại web s
 | 1.3 | Superset theme from the kit's tokens, logo, favicon, Manrope served by Superset - **done** |
 | Tests | full suite on the build PC (§2); headless Edge on a scratch instance (§2) |
 | Worker | 1.10.0 since 2026-11-26T07:34Z, Superset rebuilt 07:35Z (§3) - **done** |
-| Commit / publish | committed `817a149` in the private repository; not pushed, not public |
+| Commit / publish | private `817a149` + docs `1497fa2` (pushed); public: one squashed commit `0ceb267` "Release 1.10.0 (with 1.5.0 - 1.9.0)" from a sanitized export (internal addresses, users and company names replaced in the audit sheets), tag `v1.10.0`, GitHub Actions run 45781598729 success, PyPI `drscore 1.10.0` (wheel + sdist) - **released 2026-11-26** |
 
 No migration, no new Python dependency.
 
