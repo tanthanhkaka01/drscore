@@ -75,7 +75,9 @@
     };
     var later = function (ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); };
     var token = function () {
-      return fetch(mount.getAttribute("data-token"), { credentials: "omit", cache: "no-store" })
+      // same-origin: a sign-in link's token is for the signed-in reader (the session cookie); a public
+      // link's ignores it and runs as the link's user.
+      return fetch(mount.getAttribute("data-token"), { credentials: "same-origin", cache: "no-store" })
         .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
         .then(function (r) {
           if (!r.ok || !r.body.token) { throw new Error((r.body.error || {}).code || "BI_TOKEN"); }

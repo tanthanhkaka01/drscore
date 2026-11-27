@@ -53,4 +53,5 @@ audit: it carries that audit's date and file name as a prefix and is linked from
 | [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_9_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_9_0.md) | 2026-11-11 | 1.9.0: grid columns arranged by the reader; exports follow them | deployed, not committed, not published |
 | [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_10_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_10_0.md) | 2026-11-26 | 1.10.0: the portal, its admin pages and Superset on the site kit 1.7.0; one grouped menu | released |
 | [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_11_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_11_0.md) | 2026-11-26 | 1.11.0: mirror copies on PostgreSQL are UNLOGGED tables | released |
-| [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_0.md) | 2026-11-27 | 1.12.0: report schedules in a time window; readers kept to the window | deployed |
+| [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_0.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_0.md) | 2026-11-27 | 1.12.0: report schedules in a time window; readers kept to the window | released |
+| [`TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_1.md`](./TEST_VERSION_BEFORE_RELEASE_DETAIL_1_12_1.md) | 2026-11-27 | 1.12.1: a sign-in link's dashboard loads (token fetched with the session) | deployed |

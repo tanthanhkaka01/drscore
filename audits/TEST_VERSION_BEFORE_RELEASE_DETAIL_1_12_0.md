@@ -19,7 +19,7 @@ and to upgrade it if not; then *"làm như plan nhé"*.
 | 1.3 | `live_runs 'window'`: outside the window a reader gets the newest snapshot kept and no Refresh; nothing a reader does reads the source - **done** |
 | Tests | SQLite full suite; schedule, cache, database and CLI tests on PostgreSQL (§2) |
 | Worker | 1.12.0 since 2026-11-27T03:30Z, migration 0021, `[schedule] enabled = true` (§3) - **done** |
-| Commit / publish | private `cfd4ebb` (pushed); public: §4 |
+| Commit / publish | private `cfd4ebb` (pushed); public: one squashed commit `7fe7456`, tag `v1.12.0`, GitHub Actions run 45937269501 success, PyPI `drscore 1.12.0` (wheel + sdist, 03:59Z) - **released 2026-11-27** |
 
 Migration 0021 (`drs_report_schedule`). No new Python dependency, no Superset change.
 
@@ -71,4 +71,4 @@ its window; once it has a schedule with live runs `window`, later publishes no l
 ## 4. Publish
 
 Public repository: one squashed commit "Release 1.12.0" from a sanitized export of the private HEAD, tag `v1.12.0`,
-GitHub Actions -> PyPI. The ledger row says `deployed` until the upload is seen on PyPI.
+GitHub Actions -> PyPI: released 2026-11-27T03:59Z.
