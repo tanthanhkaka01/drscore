@@ -349,12 +349,13 @@
   function showMeta(answer) {
     var s = answer.snapshot;
     el("data-time").textContent = t("report.data_as_of", { time: s.created_at_display });
-    show(el("cached-badge"), s.cache_hit && !s.is_stale);
-    show(el("fresh-badge"), !s.cache_hit && !s.is_stale);
+    show(el("cached-badge"), s.cache_hit && !s.is_stale && !s.held);
+    show(el("fresh-badge"), !s.cache_hit && !s.is_stale && !s.held);
     el("row-count").textContent = t("report.rows", { n: answer.row_count.toLocaleString("en-US") });
     var stale = el("stale-alert");
-    stale.textContent = t("report.stale", { time: s.created_at_display });
-    show(stale, s.is_stale);
+    stale.textContent = s.held ? t("report.held", { window: s.held, time: s.created_at_display })
+                               : t("report.stale", { time: s.created_at_display });
+    show(stale, s.is_stale || !!s.held);
   }
 
   // The dashboard reads the report's dataset: it is then one more view of the snapshot on screen.

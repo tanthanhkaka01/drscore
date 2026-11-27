@@ -107,6 +107,12 @@ tab for the parameters the user chose: the guest token DRS issues opens that one
 needs no Superset account), so two users with different parameters see different data at the same
 moment. Setup: `docs/superset-setup.md`. A report with row-filter rules cannot be embedded.
 
+## Report schedules
+
+DRS 1.12.0 adds **report schedules** (`docs/report-schedule.md`): a report reads its source by itself at set
+times - dbabrain's time-window fields (`from_hour` / `to_hour`, `weekdays`, `repeat_interval`, ...) - and keeps
+the result for its retention; with `--live-runs window` readers never make it read the source outside the window.
+
 ## Mirrors and public links
 
 DRS 1.5.0 adds **mirrors** (`docs/mirror.md`): source tables copied one at a time into the DRS

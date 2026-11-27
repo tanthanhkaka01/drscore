@@ -133,6 +133,7 @@ def build(t: Callable[..., str], path: str, *, groups: list, active_group: str |
         _admin_link(t, path, "ai-usage", "nav.adm.ai_usage"),
         _admin_link(t, path, "notice-log", "nav.adm.notice_log"),
         _admin_link(t, path, "report-snapshot-history", "nav.adm.history"),
+        _admin_link(t, path, "report-schedule", "nav.adm.schedule"),
         _admin_link(t, path, "feedback", "nav.adm.feedback_table"),
     ]))
     sections.append(Section("monitor", t("nav.section.monitor"), monitor))

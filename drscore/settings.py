@@ -272,6 +272,14 @@ class MirrorSection(_Section):
     unlogged: bool = True
 
 
+class ScheduleSection(_Section):
+    """Reports read again on a schedule (drscore.reports.schedule): ``python -m drscore report schedule``."""
+
+    enabled: bool = False  # `serve` runs the report schedules that are due, in the background
+    poll_seconds: Annotated[int, Field(ge=10)] = 60  # how often the server looks for a due schedule
+    lock_minutes: Positive = 60  # a run's claim; longer than the slowest scheduled report
+
+
 class PublicSection(_Section):
     """Public links (drscore.publiclink): a report opened by a secret URL, without signing in."""
 
@@ -376,6 +384,7 @@ class AppSettings(_Section):
     export: ExportSection = ExportSection()
     bi: BiSection = BiSection()
     mirror: MirrorSection = MirrorSection()
+    schedule: ScheduleSection = ScheduleSection()
     public: PublicSection = PublicSection()
     activity: ActivitySection = ActivitySection()
     feedback: FeedbackSection = FeedbackSection()

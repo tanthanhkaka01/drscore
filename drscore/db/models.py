@@ -657,6 +657,50 @@ class MirrorTable(Base):
 
 
 # --------------------------------------------------------------------------------------------
+# Report schedules: a report read again on a schedule, in a time window (drscore.reports.schedule)
+
+LIVE_RUNS = ("always", "window")
+SCHEDULE_STATUSES = ("ok", "error", "running")
+
+
+class ReportSchedule(Base):
+    """When a report reads its source by itself, with its default parameters, and whether a reader
+    may make it read the source outside that window. ``time_window`` holds dbabrain's time-window
+    fields (``drscore.reports.window``). One row per report; the last run's state beside it."""
+
+    __tablename__ = "drs_report_schedule"
+    __table_args__ = (
+        CheckConstraint(_in("live_runs", LIVE_RUNS), name="live_runs"),
+        CheckConstraint(f"last_status IS NULL OR {_in('last_status', SCHEDULE_STATUSES)}", name="last_status"),
+    )
+
+    report_id: Mapped[int] = mapped_column(
+        IdType, ForeignKey("drs_report.report_id", ondelete="CASCADE"), primary_key=True)
+    time_window: Mapped[Any] = mapped_column(JsonType, nullable=False)
+    # always: a reader whose snapshot has expired reads the source at once (as without a schedule);
+    # window: outside the window the reader gets the newest snapshot kept, however old.
+    live_runs: Mapped[str] = mapped_column(String(10), nullable=False, default="always", server_default="always")
+    is_active: Mapped[bool] = _bool(True)
+    last_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_status: Mapped[str | None] = mapped_column(String(20))
+    last_rows: Mapped[int | None] = mapped_column(Integer)
+    last_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    last_snapshot_id: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(String(2000))
+    lock_owner: Mapped[str | None] = mapped_column(String(100))
+    lock_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now_updated()
+    updated_by: Mapped[str | None] = mapped_column(String(100))
+
+    report: Mapped[Report] = relationship()
+
+    def __str__(self) -> str:
+        return self.report.report_code if self.report is not None else str(self.report_id)
+
+
+# --------------------------------------------------------------------------------------------
 # Choice lists: choices ticked on a page and copied for the reports (drscore.choicelist)
 
 class ChoiceList(Base):

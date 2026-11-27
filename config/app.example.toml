@@ -89,6 +89,13 @@ lock_minutes = 15                     # a run's claim, renewed while it copies; 
 read_role = ""                        # PostgreSQL role given SELECT on the mirror tables
 unlogged = true                       # PostgreSQL: copies are UNLOGGED (no WAL; emptied by a crash, refilled)
 
+[schedule]
+# Reports read again on a schedule, inside a time window (dbabrain's time-window fields), set per report
+# with `python -m drscore report schedule set` (docs/report-schedule.md).
+enabled = false                       # the server runs the report schedules that are due
+poll_seconds = 60
+lock_minutes = 60                     # a run's claim; longer than the slowest scheduled report
+
 [public]
 # Public links: one report opened by a secret URL, without signing in - a wall screen, a reader with
 # no DRS account. Made by an administrator on System -> Public links (or `python -m drscore publiclink add`).

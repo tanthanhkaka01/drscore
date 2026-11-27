@@ -685,3 +685,24 @@ msgstr "Sự kiện"
 
 msgid "Text"
 msgstr "Nội dung"
+
+msgid "Report schedule"
+msgstr "Lịch chạy báo cáo"
+
+msgid "Report schedules"
+msgstr "Lịch chạy báo cáo"
+
+msgid "Time window"
+msgstr "Khung giờ"
+
+msgid "Live runs"
+msgstr "Người xem chạy"
+
+msgid "Last run"
+msgstr "Lần chạy cuối"
+
+msgid "Finished"
+msgstr "Kết thúc"
+
+msgid "Changed by"
+msgstr "Người sửa"

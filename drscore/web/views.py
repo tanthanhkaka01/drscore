@@ -29,9 +29,9 @@ from drscore import siteurl
 from drscore.bi import superset
 from drscore.render import design, html
 from drscore.render.grid import grid_columns, project
-from drscore.reports import cache
+from drscore.reports import cache, window
 from drscore.reports.params import ValueError_, default_for, form_options, parents_of, to_text
-from drscore.reports.service import Served, default_context, options_loader, param_defs, run_for_user
+from drscore.reports.service import Served, default_context, live_window, options_loader, param_defs, run_for_user
 from drscore.settings import AppSettings
 from drscore.web.schemas import (
     ErrorBody,
@@ -171,8 +171,10 @@ def definition(database: Database, settings: AppSettings, username: str, code: s
                 bi_view.error = ErrorBody(code=exc.code, message=exc.message,
                                           detail=exc.admin_detail if user.is_admin else None)
         has_grid = "grid" in design.available_views(report)
+        held = live_window(s, report.report_id)  # outside its run window a refresh reads no source
+        can_refresh = access.can_refresh and (held is None or window.is_open(held, utcnow().astimezone(settings.tz)))
         return ReportDefinition(report=report_info(report), params=params,
-                                can_export=access.can_export and has_grid, can_refresh=access.can_refresh,
+                                can_export=access.can_export and has_grid, can_refresh=can_refresh,
                                 auto_run=auto_run, views=views, default_view=default)
 
 
@@ -231,7 +233,8 @@ def _member_param_options(s, settings: AppSettings, user: User, report: Report, 
 def _snapshot_info(o, settings: AppSettings) -> SnapshotInfo:
     return SnapshotInfo(id=o.snapshot_id, created_at=o.created_at, expires_at=o.expires_at,
                         created_at_display=local_time(o.created_at, settings),
-                        cache_hit=o.cache_hit, is_stale=o.is_stale)
+                        cache_hit=o.cache_hit, is_stale=o.is_stale and not getattr(o, "held", None),
+                        held=getattr(o, "held", None))
 
 
 def _grid_response(session, report: Report, settings: AppSettings, outcome, rows) -> RunResponse:

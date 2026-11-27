@@ -39,6 +39,7 @@ CATALOGUE: dict[str, tuple[int, str]] = {
     "SOURCE_QUERY_FAILED": (502, "The data source returned an error."),
     "BI_ENGINE_UNAVAILABLE": (502, "The BI system cannot be reached right now."),
     "BUSY": (503, "The report is being prepared by another request. Try again in a moment."),
+    "OUTSIDE_RUN_WINDOW": (409, "This report reads its data only at set times, and none has been read yet for these values."),
     "SOURCE_TIMEOUT": (504, "The data source took too long to answer."),
     "ADMIN_ONLY": (403, "This page is for administrators."),
     "FEEDBACK_NOT_FOUND": (404, "The feedback was not found."),

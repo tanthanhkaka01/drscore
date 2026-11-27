@@ -21,11 +21,11 @@ from drscore.authz.permissions import Access, require_report
 from drscore.authz.rowfilter import filter_rows, user_attributes
 from drscore.datasources.connectors import SourceInfo
 from drscore.db.engine import Database
-from drscore.db.models import Datasource, Report, ReportParam, ReportSnapshot, User
+from drscore.db.models import Datasource, Report, ReportParam, ReportSchedule, ReportSnapshot, User
 from drscore.db.types import utcnow
 from drscore.errors import DRSError
 from drscore.render import design
-from drscore.reports import cache, executor
+from drscore.reports import cache, executor, window
 from drscore.reports.params import (
     DefaultContext,
     ParamDef,
@@ -60,6 +60,8 @@ class Prepared:
     values: dict[str, Any]
     params_canonical: dict[str, Any]
     key: str
+    # The report's schedule with live_runs 'window': outside it a reader never makes it read the source.
+    live_window: window.TimeWindow | None = None
 
 
 @dataclass
@@ -73,6 +75,7 @@ class Outcome:
     columns: list[dict[str, str]]
     rows: list[list[Any]]  # the full result - filter it before it leaves the server
     params: dict[str, Any]
+    held: str | None = None  # outside its run window: the window, as text; the newest snapshot kept is served
 
 
 @dataclass
@@ -163,6 +166,23 @@ def default_context(settings: AppSettings, user_attributes: dict[str, list[str]]
 run_row_cap: contextvars.ContextVar[int | None] = contextvars.ContextVar("run_row_cap", default=None)
 
 
+def live_window(session: Session, report_id: int) -> window.TimeWindow | None:
+    """The run window a reader is kept to: the report's active schedule with live_runs 'window'."""
+    sched = session.get(ReportSchedule, report_id)
+    if sched is None or not sched.is_active or sched.live_runs != "window":
+        return None
+    try:
+        return window.parse(sched.time_window)
+    except window.WindowError as exc:  # set through the CLI, which refuses this: never open the source wide
+        raise DRSError("REPORT_MISCONFIGURED", admin_detail=f"schedule of report {report_id}: {exc}") from exc
+
+
+def window_closed(prep: Prepared, settings: AppSettings, now: datetime | None = None) -> bool:
+    """Whether a reader is outside the report's run window now."""
+    return prep.live_window is not None and not window.is_open(
+        prep.live_window, (now or utcnow()).astimezone(settings.tz))
+
+
 def prepare(session: Session, report: Report, raw_params: dict[str, Any] | None, settings: AppSettings,
             now: datetime | None = None, user_attributes: dict[str, list[str]] | None = None) -> Prepared:
     defs = param_defs(session, report.report_id)
@@ -185,6 +205,7 @@ def prepare(session: Session, report: Report, raw_params: dict[str, Any] | None,
         values=values,
         params_canonical=canonical(values),
         key=cache.cache_key(src.code, report.query_text, canonical_json(values)),
+        live_window=live_window(session, report.report_id),
     )
 
 
@@ -197,12 +218,16 @@ def _outcome(snap, *, cache_hit: bool, is_stale: bool = False, executed: bool = 
 
 
 def get_result(database: Database, prep: Prepared, settings: AppSettings, *, refresh: bool = False,
-               username: str | None = None) -> Outcome:
+               username: str | None = None, scheduled: bool = False) -> Outcome:
     """The result of a report for these parameters.
 
     A snapshot inside its retention is served as it is. Otherwise the request takes the lock of
     (report, parameters), moves the old snapshots to the history, runs the source once and saves
     the new snapshot. Identical requests arriving meanwhile wait for that snapshot.
+
+    A report whose schedule keeps readers to its run window (live_runs 'window') never reads the
+    source outside it, refresh or not: the newest snapshot kept is served, however old, and none at
+    all is OUTSIDE_RUN_WINDOW. ``scheduled``: the schedule's own run, or an administrator's forced one.
     """
     cfg = settings.cache
     if not refresh:
@@ -210,6 +235,17 @@ def get_result(database: Database, prep: Prepared, settings: AppSettings, *, ref
             snap = cache.find_valid(s, prep.report_id, prep.key, utcnow())
             if snap is not None:
                 return _outcome(snap, cache_hit=True)
+    if not scheduled and window_closed(prep, settings):
+        with database.session() as s:
+            snap = cache.find_valid(s, prep.report_id, prep.key, utcnow()) or cache.newest_kept(
+                s, prep.report_id, prep.key)
+            if snap is not None:
+                out = _outcome(snap, cache_hit=True, is_stale=snap.expires_at <= utcnow())
+                out.held = prep.live_window.text()
+                return out
+        raise DRSError("OUTSIDE_RUN_WINDOW", admin_detail=(
+            f"{prep.report_code} reads its source only in {prep.live_window.text()} "
+            f"({settings.app.timezone}); no snapshot is kept for these parameters"))
 
     with database.session() as s:
         marker = cache.newest_id(s, prep.report_id, prep.key)

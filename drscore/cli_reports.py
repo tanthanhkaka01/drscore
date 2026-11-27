@@ -290,7 +290,7 @@ def cmd_cache_warm(args: argparse.Namespace) -> int:
         try:
             with database.session() as s:
                 prep = prepare(s, s.get(Report, report.report_id), {}, settings)
-            outcome = get_result(database, prep, settings, username="cache-warm")
+            outcome = get_result(database, prep, settings, username="cache-warm", scheduled=True)
             state = "ran the source" if outcome.executed else "still valid"
             if report.bi_dataset_table:
                 from drscore.bi import dataset as bi_dataset
@@ -304,6 +304,144 @@ def cmd_cache_warm(args: argparse.Namespace) -> int:
                 continue
             failed += 1
             print(f"ERROR {report.report_code}: {exc.code}: {exc.admin_detail or exc.message}")
+    return 1 if failed else 0
+
+
+# --------------------------------------------------------------------------------------------
+# report schedule
+
+WINDOW_FLAGS = ("from_hour", "to_hour", "from_minute", "to_minute", "from_day", "to_day", "from_month", "to_month",
+                "from_year", "to_year")
+
+
+def _window_of(args: argparse.Namespace) -> dict[str, Any]:
+    raw: dict[str, Any] = {}
+    if args.window:
+        try:
+            raw = json.loads(args.window)
+        except json.JSONDecodeError as exc:
+            _fail(f"--window is not JSON: {exc}")
+        if not isinstance(raw, dict):
+            _fail("--window must be a JSON object of time-window fields")
+    for name in WINDOW_FLAGS:
+        value = getattr(args, name)
+        if value is not None:
+            raw[name] = value
+    if args.weekdays is not None:
+        raw["weekdays"] = [] if args.weekdays.strip() in ("", "none") else args.weekdays
+    for flag, name in (("every", "repeat_interval"), ("retry", "retry_interval"), ("timeout", "timeout")):
+        value = getattr(args, flag)
+        if value is not None:
+            raw[name] = value
+    return raw
+
+
+def _print_schedule(d: dict[str, Any], settings) -> None:
+    from drscore.web.views import local_time
+
+    def when(value) -> str:
+        return local_time(value, settings) if value else "-"
+
+    state = "on" if d["active"] else "off"
+    now = "open" if d["open"] else f"closed ({d['closed_reason']})"
+    print(f"{d['report']}: {d['window']}; live runs {d['live_runs']}; {state}; window {now}; "
+          f"{'due' if d['due'] else 'not due'}")
+    print(f"  time_window {json.dumps(d['time_window'], sort_keys=True)}")
+    last = [d["last_status"] or "-"]
+    if d["last_rows"] is not None:
+        last.append(f"{d['last_rows']} row(s)")
+    if d["last_duration_ms"] is not None:
+        last.append(f"{d['last_duration_ms']} ms")
+    if d["last_snapshot_id"] is not None:
+        last.append(f"snapshot {d['last_snapshot_id']}")
+    print(f"  last run {when(d['last_started_at'])} -> {when(d['last_finished_at'])}: {', '.join(last)}")
+    if d["last_error"]:
+        print(f"  error {d['last_error']}")
+
+
+def cmd_schedule_set(args: argparse.Namespace) -> int:
+    from drscore.audit import cli_actor
+    from drscore.db.models import ReportSchedule
+    from drscore.reports import schedule
+
+    database, settings = _ctx()
+    raw = _window_of(args)
+    with database.session() as s:
+        done = []
+        for code in args.codes:
+            try:
+                done.append(schedule.set_schedule(s, code, raw, live_runs=args.live_runs, actor=cli_actor(),
+                                                  settings=settings).report_id)
+            except DRSError as exc:
+                _fail(f"{code}: {exc.detail or exc.admin_detail or exc.message}")
+        s.flush()
+        for rid in done:
+            _print_schedule(schedule.describe(s.get(ReportSchedule, rid), settings), settings)
+    if (raw.get("timeout") or 0) > settings.schedule.lock_minutes * 60:
+        print(f"Note: timeout is longer than [schedule] lock_minutes ({settings.schedule.lock_minutes} min): "
+              "a second server could start the same report before the first ends.")
+    if not settings.schedule.enabled:
+        print("Note: [schedule] enabled is false in app.toml: the server does not run schedules.")
+    return 0
+
+
+def cmd_schedule_list(args: argparse.Namespace) -> int:
+    from drscore.db.models import ReportSchedule
+    from drscore.reports import schedule
+
+    database, settings = _ctx()
+    with database.session() as s:
+        rows = [schedule.describe(x, settings) for x in s.scalars(select(ReportSchedule))]
+    rows.sort(key=lambda d: d["report"])
+    if args.code:
+        rows = [d for d in rows if d["report"] == args.code]
+        if not rows:
+            _fail(f"{args.code} has no schedule.")
+    for d in rows:
+        _print_schedule(d, settings)
+    print(f"{len(rows)} schedule(s); [schedule] enabled = {str(settings.schedule.enabled).lower()}.")
+    return 0
+
+
+def cmd_schedule_active(args: argparse.Namespace) -> int:
+    from drscore.audit import cli_actor
+    from drscore.reports import schedule
+
+    database, _ = _ctx()
+    with database.session() as s:
+        for code in args.codes:
+            try:
+                schedule.set_active(s, code, args.active, actor=cli_actor())
+            except DRSError as exc:
+                _fail(exc.admin_detail or exc.message)
+    print(f"{len(args.codes)} schedule(s) {'on' if args.active else 'off'}.")
+    return 0
+
+
+def cmd_schedule_run(args: argparse.Namespace) -> int:
+    from drscore.audit import cli_actor
+    from drscore.reports import schedule
+
+    database, settings = _ctx()
+    codes = list(args.codes)
+    if args.due:
+        codes = schedule.due(database, settings)
+        if not codes:
+            print("No schedule is due.")
+            return 0
+    if not codes:
+        _fail("Name the reports to run, or --due.")
+    failed = 0
+    for code in codes:
+        try:
+            r = schedule.run_one(database, settings, code, actor=cli_actor())
+        except DRSError as exc:
+            _fail(exc.admin_detail or exc.message)
+        if r.ok:
+            print(f"OK    {code}: {r.rows} row(s) in {r.duration_ms} ms, snapshot {r.snapshot_id}")
+        else:
+            failed += 1
+            print(f"ERROR {code}: {r.error}")
     return 1 if failed else 0
 
 
@@ -443,6 +581,33 @@ def add_parsers(sub) -> None:
     p = rep.add_parser("validate", help="check report definitions")
     p.add_argument("--code")
     p.set_defaults(handler=cmd_report_validate)
+    sch = rep.add_parser("schedule", help="read a report again on a schedule, in a time window").add_subparsers(
+        dest="schedule_action", required=True)
+    p = sch.add_parser("set", help="create or replace the schedule of reports (dbabrain's time-window fields)")
+    p.add_argument("codes", nargs="+", metavar="CODE")
+    p.add_argument("--window", help="the time window as JSON, for example "
+                                    "{\"from_hour\": 1, \"to_hour\": 4, \"repeat_interval\": 72000}; "
+                                    "the flags below override its fields")
+    for name in WINDOW_FLAGS:
+        p.add_argument(f"--{name.replace('_', '-')}", dest=name, type=int)
+    p.add_argument("--weekdays", help="ISO weekdays 1-7 (1 Monday), e.g. 1,2,3,4,5; none: never")
+    p.add_argument("--every", type=int, help="repeat_interval: seconds between starts (0 once, -1 manual)")
+    p.add_argument("--retry", type=int, help="retry_interval after a failed run (default: --every)")
+    p.add_argument("--timeout", type=int, help="seconds a scheduled run may take (default: the report's)")
+    p.add_argument("--live-runs", choices=["always", "window"],
+                   help="window: outside it readers get the newest snapshot and never read the source")
+    p.set_defaults(handler=cmd_schedule_set)
+    p = sch.add_parser("list", help="the schedules, their window and their last run")
+    p.add_argument("code", nargs="?")
+    p.set_defaults(handler=cmd_schedule_list)
+    p = sch.add_parser("run", help="run scheduled reports now, whatever their window says")
+    p.add_argument("codes", nargs="*", metavar="CODE")
+    p.add_argument("--due", action="store_true", help="the schedules that are due now")
+    p.set_defaults(handler=cmd_schedule_run)
+    for name, active in (("on", True), ("off", False)):
+        p = sch.add_parser(name, help=f"turn schedules {name}")
+        p.add_argument("codes", nargs="+", metavar="CODE")
+        p.set_defaults(handler=cmd_schedule_active, active=active)
 
     c = sub.add_parser("cache", help="JSON report cache").add_subparsers(dest="action", required=True)
     p = c.add_parser("purge", help="move every expired snapshot to the history; remove stale locks")

@@ -51,6 +51,7 @@ from drscore.db.models import (
     ReportGroup,
     ReportParam,
     ReportRowFilter,
+    ReportSchedule,
     ReportSnapshotHistory,
     Role,
     User,
@@ -871,9 +872,27 @@ class HistoryAdmin(ReadOnlyView, model=ReportSnapshotHistory):
     column_details_exclude_list = [ReportSnapshotHistory.rows_json]
 
 
+class ScheduleAdmin(ReadOnlyView, model=ReportSchedule):
+    """The report schedules and their last run; set with ``python -m drscore report schedule set``."""
+
+    name = _("Report schedule")
+    name_plural = _("Report schedules")
+    icon = "fa-solid fa-calendar-check"
+    column_list = [ReportSchedule.report, ReportSchedule.time_window, ReportSchedule.live_runs,
+                   ReportSchedule.is_active, ReportSchedule.last_started_at, ReportSchedule.last_status,
+                   ReportSchedule.last_rows, ReportSchedule.last_duration_ms]
+    column_labels = {**ReadOnlyView.column_labels, "report": L("Report"), "time_window": L("Time window"),
+                     "live_runs": L("Live runs"), "is_active": L("Active"), "last_started_at": L("Last run"),
+                     "last_finished_at": L("Finished"), "last_status": L("Status"), "last_rows": L("Rows"),
+                     "last_duration_ms": L("Duration (ms)"), "last_snapshot_id": L("Snapshot"),
+                     "last_error": L("Error message"), "updated_by": L("Changed by")}
+    column_default_sort = [(ReportSchedule.report_id, False)]
+    column_details_exclude_list = [ReportSchedule.lock_owner, ReportSchedule.lock_until]
+
+
 VIEWS = [GroupAdmin, ReportAdmin, ParamAdmin, ColumnAdmin, RowFilterAdmin, DatasourceAdmin, UserAdmin, AttributeAdmin,
          RoleAdmin, GrantGroupAdmin, GrantReportAdmin, GrantDatasourceAdmin, FeedbackAdmin, ActivityLogAdmin,
-         AccessLogAdmin, AuditLogAdmin, AiUsageAdmin, NoticeLogAdmin, HistoryAdmin]
+         AccessLogAdmin, AuditLogAdmin, AiUsageAdmin, NoticeLogAdmin, HistoryAdmin, ScheduleAdmin]
 
 
 def _drs_shell(request: Request) -> dict:

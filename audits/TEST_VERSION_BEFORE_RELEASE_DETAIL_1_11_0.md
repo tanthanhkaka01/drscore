@@ -16,7 +16,7 @@ UNLOGGED tables. The operator: *"đưa sang private đi"*; then *"Ok"* to deploy
 | 1.2 | An incremental mirror whose copy is empty (an unlogged table is emptied after a crash of its server) makes a full copy instead of trusting its watermark - **done** |
 | Tests | mirror tests on SQLite and on PostgreSQL; full suite on SQLite (§2) |
 | Worker | 1.11.0 since 2026-11-26T14:01Z (§3) - **done** |
-| Commit / publish | private `961787f` (pushed); public: one squashed commit from a sanitized export, tag `v1.11.0` (§4) |
+| Commit / publish | private `961787f` (pushed); public: one squashed commit `74dd9bb` from a sanitized export, tag `v1.11.0`, GitHub Actions run 45835347662 success, PyPI `drscore 1.11.0` (wheel + sdist, 14:05Z) - **released 2026-11-26** |
 
 No migration, no new Python dependency, no Superset change.
 
@@ -58,5 +58,5 @@ Rollback: `DRSCORE_VERSION=1.10.0` in `.env` + `docker compose up -d drscore`. T
 ## 4. Publish
 
 Public repository: one squashed commit "Release 1.11.0" from a sanitized export of the private HEAD (internal
-addresses, users and company names replaced in the audit sheets), tag `v1.11.0`, GitHub Actions -> PyPI. The ledger
-row says `deployed` until the tag's upload is seen on PyPI.
+addresses, users and company names replaced in the audit sheets), tag `v1.11.0`, GitHub Actions -> PyPI. The test
+host's name was replaced in the 1.7.1 / 1.7.2 sheets too. PyPI upload 2026-11-26T14:05Z.

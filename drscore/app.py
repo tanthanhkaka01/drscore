@@ -108,11 +108,19 @@ def create_app() -> FastAPI:
 
             scheduler = MirrorScheduler(database, settings.app)
             scheduler.start()
+        reports = None
+        if settings.app.schedule.enabled:  # reports read again on a schedule, inside their time window
+            from drscore.reports.schedule import ReportScheduler
+
+            reports = ReportScheduler(database, settings.app)
+            reports.start()
         try:
             yield
         finally:
             if scheduler is not None:
                 scheduler.stop()
+            if reports is not None:
+                reports.stop()
 
     app = FastAPI(title=settings.app.app.name, docs_url=None, redoc_url=None, openapi_url=None,
                   dependencies=[Depends(csrf_guard)], lifespan=lifespan)

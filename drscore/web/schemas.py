@@ -145,6 +145,7 @@ class SnapshotInfo(_Model):
     created_at_display: str  # in app.timezone, for the "data as of" line
     cache_hit: bool
     is_stale: bool
+    held: str | None = None  # outside the report's run window: the window, as text
 
 
 class GridColumnInfo(_Model):
